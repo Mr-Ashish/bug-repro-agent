@@ -64,69 +64,33 @@
 
 ## What This Means for Design
 
-1. **Browser-Use is the driver** (not Stagehand/Playwright directly — Browser-Use wraps those)
-2. **Visual impact matters** — judges need to see the browser clicking around
-3. **Reliability is 30% of score** — we need graceful failure handling, not just happy path
-4. **7 hours to build** — scope down HARD
-5. **Pre-seed the app** — Plane should be running + populated with test data BEFORE the hackathon starts
-6. **Pick 3-5 bugs max** — nail those, don't try to generalize
+1. **Visual impact matters** — judges need to see the browser clicking around
+2. **Reliability is 30% of score** — we need graceful failure handling, not just happy path
+3. **7 hours to build** — scope down HARD
+4. **Pre-seed the app** — Plane should be running + populated with test data BEFORE the hackathon starts
+5. **Pick 3 bugs** — nail those, don't try to generalize
 
 ---
 
 ## Prior Art: ERPNext Bug QA Agent
 
-**Location:** `/Users/ashishmishra/Documents/experimentation/browser-use-hackathon/bug-qa-agent/`
+**Location:** `/Users/ashishmishra/Documents/experimentation/browser-use-hackathon/bug-qa-agent/` (reference only)
 
-We already built a working bug reproduction agent for ERPNext. The architecture is ~80% reusable:
+We previously built a bug reproduction agent for ERPNext using Browser-Use + GPT-4o + Claude Sonnet judge. That architecture has been **replaced** by the current design:
 
-### Architecture (from prior build)
+### Old → New Architecture Shift
 
-```
-CLI (click) → Orchestrator → Browser-Use Session → Agent Loop (GPT-4o)
-                                                  ↓ tools ↓
-                                            [Stagehand act/extract/observe]
-                                            [mark_reproduced / mark_not_reproduced]
-                                            [capture_evidence]
-                                                  ↓
-                                            Judge (Claude Sonnet via OpenRouter)
-                                                  ↓
-                                            Report (report.md + trace.json + artifacts/)
-```
+| Old (ERPNext) | New (Plane) | Why |
+|---|---|---|
+| Python orchestrator | Grok skill + /loop | Claude Code IS the meta-agent |
+| Browser-Use Agent class | Claude Code + Stagehand | No separate agent framework |
+| GPT-4o for actions | Stagehand (Gemini Flash) | Stagehand handles NL→DOM |
+| Claude Sonnet judge (OpenRouter) | Claude Code vision | Same agent, different phase |
+| Python CLI | `/repro <url>` skill trigger | Native to Grok |
+| `scenarios.json` | Real GitHub issues | No planted bugs |
 
-### What We Reuse (No Changes)
+### What We Carry Forward (patterns, not code)
 
-| Component | File |
-|---|---|
-| CLI entry point | `cli.py` |
-| Orchestrator pipeline | `orchestrator.py` |
-| Browser-Use launcher | `browser_launcher.py` |
-| Stagehand HTTP client | `stagehand_client.py` |
-| Repro verdict tools | `tools/repro.py` |
-| Test verdict tools | `tools/test.py` |
-| Stagehand agent tools | `tools/stagehand_tools.py` |
-| Evidence collector | `evidence/collector.py` |
-| Judge (OpenRouter) | `judge/openrouter_judge.py` |
-| Report generator | `report/generator.py` |
-| Trace framework | `trace/models.py`, `trace/collector.py` |
-| Batch runner | `scripts/run_all_scenarios.py` |
-
-### What We Replace (Plane-specific)
-
-| Component | Adaptation |
-|---|---|
-| `config.py` | `erpnext_url` → `plane_url`, credentials |
-| `subprocess_manager.py` | ERPNext health check → Plane docker-compose health |
-| `prompts/repro_system.md` | ERPNext UI patterns → Plane UI patterns (Next.js SPA) |
-| `prompts/test_system.md` | Same |
-| `scenarios.json` | Replace all 13 ERPNext scenarios with 3-5 Plane bug scenarios |
-| `scripts/seed_erpnext_api.py` | Replace with Plane API seeder (create workspace, project, work items) |
-
-### Key Design Patterns to Preserve
-
-1. **Two-LLM split:** GPT-4o for browser actions, Claude Sonnet for verdict judgment
-2. **Mode-specific tools:** Clean repro vs test mode separation
-3. **Stagehand as optional sidecar** — graceful degradation
-4. **Structured trace:** Per-step thinking, goals, tool calls, costs
-5. **Evidence-first prompting:** "Extract before judging"
-6. **Scenario JSON format:** Tiered complexity, expected verdicts
-7. **Planted bugs for reliable demos**
+1. **Stagehand REST API pattern** — `stagehand_client.py` is reference for the TS client
+2. **Evidence-first approach** — capture screenshots before judging
+3. **Structured traces** — record what the agent did at each step

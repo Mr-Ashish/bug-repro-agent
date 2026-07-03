@@ -1,119 +1,92 @@
-# Bug Reproduction Agent — Full-Fat Redesign
+# Bug Reproduction Agent — Design Document
 
-> **Variation A** — Archit's design. Claude Code as the meta-agent.
-> **Target app:** [Panel](https://github.com/holoviz/panel) (HoloViz)
-
----
-
-## The Key Shift
-
-Claude Code doesn't just *sequence* the layers — it **plans, authors, and supervises** them, while the deterministic artifacts it produces become the durable, replayable system. Agent for the hard once-per-issue reasoning; compiled scripts for everything repeatable.
+> **Target app:** [Plane](https://github.com/makeplane/plane) (makeplane) — open-source project management
+> **Architecture:** Claude Code (Grok) as meta-agent + Stagehand for browser automation
+> **See also:** [HLD.md](./HLD.md) for the locked architecture decisions
 
 ---
 
 ## Core Architectural Principle
 
-Split every layer into **"agent-authored" vs "deterministic-runtime."** Claude Code does the reasoning-heavy authoring on the first encounter with an issue; it compiles that into artifacts (seed manifests, Stagehand/Playwright scripts, assertion specs) that replay without the agent. This is what makes it both intelligent *and* a regression asset — reproduce once, emit replayable script.
+Split every reproduction into **"agent-authored" vs "deterministic-runtime."** Claude Code does the reasoning-heavy authoring on the first encounter with an issue; it compiles that into artifacts (Playwright scripts, plan specs) that replay without the agent. Reproduce once with intelligence, replay forever with determinism.
 
 ---
 
-## Layer-by-Layer Redesign
+## The Two-Phase Model
 
-### 1. Meta-orchestrator — Claude Code (agent loop)
-
-The top-level driver. Reads the issue, decides the plan, invokes each layer as tools/subagents, observes results, retries, and decides "reproduced / not / can't tell." Its durable output per issue is a **run manifest** (what it did) plus the compiled artifacts. This replaces Temporal *as the author*; but see layer 8 — Temporal still runs the compiled replays.
-
-### 2. Planner — Claude Code + a schema contract
-
-Claude Code reads the Panel/GitHub issue and emits a structured `repro-plan.json`:
-
-```json
-{
-  "preconditions": ["Panel app seed specs"],
-  "steps": ["natural-language + resolved selectors"],
-  "oracle": { "type": "...", "target": "...", "expected": "..." },
-  "teardown": "kill server + cleanup"
-}
 ```
+PHASE 1 — AUTHOR (Claude Code + Stagehand, agentic, expensive, once)
+  issue → READ → PLAN → SEED → DRIVE → VERIFY
+        → EMIT: repro-plan.json + repro.spec.ts + evidence/ + verdict.md
 
-The schema is the contract every downstream layer consumes. This is where the open/axial-coding instinct helps: the planner classifies the issue (widget-state bug? layout/rendering bug? callback bug? server-side bug?) because bug *class* determines seeding and oracle strategy.
-
-### 3. Devbox — bash-driven, but as a real provisioning subagent
-
-Full version (not the sleep-loop): Claude Code drives **Testcontainers** or a **Dagger** pipeline via bash for programmatic lifecycle, per-run network isolation, and volume snapshotting. For Panel, the devbox boots a Python environment with Panel + its dependencies, launches `panel serve app.py`, and verifies the Bokeh server is healthy. Claude Code supervises health via the server's ready signal (HTTP 200 on the served app URL), not a fixed sleep.
-
-### 4. App adapter — a Skill (`CLAUDE.md` playbook) per app
-
-This is the generic/specific boundary. The **Panel adapter Skill** encodes: how to install Panel and its dependencies, readiness signal (Bokeh server health endpoint), the Python API seed patterns, widget/layout quirks, common Bokeh model selectors, and Panel-specific DOM structure. Swapping to another app later = swap the Skill. Claude Code loads the relevant adapter and stays app-agnostic in its core logic.
-
-### 5. Seeder — Claude Code authors, Python scripts execute
-
-Claude Code translates `preconditions` into a **seed script** — a Python file that constructs the Panel app state needed to reproduce the bug. This uses Panel's Python API directly (e.g., `pn.widgets.Select(...)`, `pn.Column(...)`, `pn.serve(...)`) to build the exact app configuration described in the issue. The compiled seed script is deterministic and replayable — the agent isn't in the loop on replay. It also emits **dependency-ordered** setup (data sources before widgets, widgets before layouts), which is exactly the kind of reasoning an agent does well and a template does badly.
-
-### 6. UI driver — Claude Code authors Stagehand, compiles to Playwright
-
-First run: Claude Code writes Stagehand `act/observe` calls from the natural-language steps — resolving ambiguous steps against the live DOM (Panel renders via Bokeh, so selectors target Bokeh model elements). Then it **caches the resolved actions and emits a pure Playwright script**. This is the crucial move: Stagehand (with the LLM) for authoring/self-healing; compiled Playwright for deterministic replay. You get adaptability once and reproducibility forever.
-
-### 7. Verification oracle — Claude Code + compiled assertions
-
-Full version, three tiers Claude Code selects between based on bug class:
-
-- **Deterministic:** Playwright web-first assertions (element state, text, count) — compiled into the replay script.
-- **Visual:** Screenshot diff against expected, for rendering/layout bugs (common in Panel).
-- **Semantic:** Claude Code inspects trace + DOM + console/network and judges whether *this specific bug* manifested — for fuzzy cases assertions can't express (e.g., "widget updates feel laggy" or "callback fires twice").
-
-The oracle spec goes into the plan schema so replays self-verify without the agent.
-
-### 8. Capture — Playwright native
-
-Video + trace + HAR + console, one config. Trace is what feeds the semantic oracle and your eventual regression review. Free under the compiled Playwright script.
-
-### 9. Replay runtime — Temporal (or Dagger), agent NOT in loop
-
-The compiled artifacts (seed script + Playwright script + oracle spec) become a **durable workflow**: boot → install Panel env → run seed app → run Playwright → assert → capture → teardown, with retries and isolation. This is your regression harness. Claude Code produced it; Temporal runs it a thousand times deterministically and cheaply. This resolves the cost/non-determinism cautions — you pay for the agent once per issue, not per run.
+PHASE 2 — REPLAY (Playwright, deterministic, cheap, N times)
+  npx playwright test reproductions/<issue>/repro.spec.ts
+```
 
 ---
 
-## The Two-Phase Mental Model
+## System Components
 
-```
-PHASE 1 — AUTHOR (Claude Code, agentic, expensive, once)
-  issue → plan → boot → seed(author) → drive(author, self-heal)
-        → verify(author) → EMIT: seed_app.py + repro.spec.ts + oracle.json + video
+### 1. Meta-agent — Claude Code (Grok skill + /loop)
 
-PHASE 2 — REPLAY (Temporal, deterministic, cheap, N times)
-  artifacts → boot → install env → seed_app.py → repro.spec.ts
-            → oracle.json → video → teardown
-```
+The brain. Reads the issue, decides the plan, drives Stagehand, judges the result, emits artifacts. Packaged as a skill (`/repro <issue-url>`) that internally uses `/loop` for autonomous execution.
+
+### 2. Browser hands — Stagehand server-v3
+
+Stagehand (https://github.com/browserbase/stagehand) runs as a local server on `localhost:3000`. Claude Code calls its REST API via a TypeScript client: `act()`, `observe()`, `extract()`, `navigate()`. Stagehand uses `google/gemini-2.5-flash` for its internal DOM reasoning — cheap and fast. It doesn't plan or judge; it just translates NL instructions to browser actions.
+
+### 3. Target app — Plane (local docker-compose)
+
+Plane runs locally via `docker-compose-local.yml`. Full stack: Next.js frontend + Django API + PostgreSQL + Redis + RabbitMQ + MinIO. Pre-seeded with workspace `plane-dev`, project SEED with 30 issues.
+
+### 4. Verification oracle — Claude Code vision
+
+After executing repro steps, Claude Code takes a screenshot and uses vision to judge: "Does this match the expected bug behavior?" No separate judge LLM — Claude Code IS the judge.
+
+### 5. Artifact emitter
+
+Compiles the agent's work into deterministic artifacts:
+- `repro-plan.json` — structured reproduction plan
+- `repro.spec.ts` — Playwright test for replay
+- `evidence/` — screenshots, video, console logs
+- `verdict.md` — human-readable report
+
+### 6. Seeder — dynamic, hybrid
+
+Claude Code ensures Plane has the right data state before reproduction. Uses Stagehand UI for visual operations (create stickies) and Plane REST API for bulk/fast ops. Decides what seeding is needed per bug.
 
 ---
 
 ## What Lives Where
 
-| Layer | Author-time (Claude Code) | Runtime (deterministic) |
+| Layer | Phase 1 (Claude Code) | Phase 2 (Deterministic) |
 |---|---|---|
-| Orchestrate | agent loop | Temporal workflow |
-| Plan | LLM → schema | (frozen plan) |
-| Devbox | supervises Testcontainers | Testcontainers/Dagger |
-| Adapter | reads Skill | (baked into scripts) |
-| Seed | authors seed script | `seed_app.py` (Panel Python API) |
-| Drive | authors via Stagehand | `repro.spec.ts` (Playwright) |
-| Oracle | selects + authors | `oracle.json` assertions |
-| Capture | — | Playwright config |
+| Orchestrate | skill + /loop | (not needed) |
+| Plan | LLM → `repro-plan.json` | (frozen plan) |
+| Seed | Stagehand UI + Plane API | (pre-seeded state) |
+| Drive | Stagehand `act/observe` | `repro.spec.ts` (Playwright) |
+| Verify | screenshot + vision | Playwright assertions |
+| Capture | Stagehand screenshots | Playwright video/trace |
 
 ---
 
-## Why This Is the Right Full-Fat Shape
+## Why This Shape
 
-- **Claude Code earns its place** on the three genuinely hard, reasoning-heavy jobs: turning messy issues into plans, resolving ambiguous UI steps, and judging fuzzy oracles. Those are agent-shaped problems.
-- **Determinism is recovered** by compiling agent decisions into replayable artifacts — you're not stuck choosing between "smart but flaky" and "dumb but stable."
-- **The generic goal holds:** only the adapter Skill and seeder patterns are app-specific; swap them for another app and the whole machine moves.
-- **It becomes a regression system, not just a repro toy** — which is where the eval-infra background makes this genuinely valuable beyond the hackathon.
-
-**The one hard problem this doesn't magic away:** the **semantic oracle** for bugs that can't be expressed as assertions. That's the frontier piece. Everything else here is buildable with today's tools.
+- **Claude Code earns its place** on the three genuinely hard jobs: turning messy issues into plans, resolving ambiguous UI steps, and judging fuzzy oracles.
+- **Determinism is recovered** by compiling agent decisions into replayable Playwright scripts.
+- **Cost is controlled** — pay for the agent once per issue, replay for free.
+- **It becomes a regression system**, not just a repro toy.
 
 ---
 
-## Open Decision
+## Design Ancestry
 
-> Draft the **Panel adapter Skill** or the **plan-schema contract** first?
+This design evolved from an earlier "full-fat" 9-layer architecture that targeted Panel (HoloViz). The key shifts:
+- Panel → Plane (widget library → full-stack web app)
+- Temporal replay runtime → `npx playwright test`
+- Testcontainers/Dagger → existing docker-compose
+- Python seeder scripts → dynamic hybrid seeding (UI + API)
+- Three-tier oracle → screenshot + Claude vision
+- Separate Python orchestrator → Grok skill + /loop
+
+The original's core insight — agent-authored vs deterministic-runtime split — survived intact.
