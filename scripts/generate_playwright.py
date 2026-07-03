@@ -22,22 +22,44 @@ from urllib.parse import urlparse
 # ── Action parsing ────────────────────────────────────────────
 
 def parse_action_str(action_str: str) -> dict | None:
-    """Parse browser-use action string like 'ClickAction(index=5, ...)' into dict."""
-    m = re.match(r"(\w+)\((.+)\)", action_str, re.DOTALL)
-    if not m:
-        return None
+    """Parse browser-use action strings.
 
-    name = m.group(1).lower().replace("action", "")
-    raw = m.group(2)
+    Handles the nested format from browser-use:
+        root=ClickActionModel(click=ClickElementAction(index=1103, ...))
+        root=InputActionModel(input=InputTextAction(index=3547, text='Test State', clear=True))
+        root=NavigateActionModel(navigate=NavigateAction(url='http://...'))
+        root=ScrollActionModel(scroll=ScrollAction(direction='down', amount=300))
+        root=EvaluateActionModel(evaluate=EvaluateAction(code='...'))
+        root=DoneActionModel(done=DoneAction(text='...'))
+    """
+    # Detect the action type from the outer model name
+    type_match = re.search(r"root=(\w+)ActionModel", action_str)
+    if not type_match:
+        # Fallback: try simple format like 'click(index=5)'
+        m = re.match(r"(\w+)\((.+)\)", action_str, re.DOTALL)
+        if not m:
+            return None
+        name = m.group(1).lower()
+        raw = m.group(2)
+    else:
+        name = type_match.group(1).lower()
+        raw = action_str
 
     params = {}
-    # Extract key=value pairs (handles quoted strings, ints, booleans)
+
+    # Extract key=value pairs from anywhere in the string
+    # Handles: index=1103, text='Test State', url='http://...', clear=True
     for kv in re.finditer(
         r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|(\d+(?:\.\d+)?)|(\w+))",
         raw,
     ):
         key = kv.group(1)
         val = kv.group(2) or kv.group(3) or kv.group(4) or kv.group(5)
+        # Skip internal model field names
+        if key in ("root", "click", "input", "navigate", "scroll",
+                    "evaluate", "done", "wait", "extract", "search",
+                    "coordinate_x", "coordinate_y"):
+            continue
         if kv.group(4):
             val = float(val) if "." in val else int(val)
         params[key] = val
@@ -143,17 +165,17 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
             if comment:
                 step_lines.append(comment)
             step_lines.append(
-                f"    # TODO: Replace with actual selector (agent clicked element index={idx})"
+                f"    # Agent clicked element index={idx} — replace with real selector"
             )
             step_lines.append(f"    # page.locator('...').click()")
 
-        elif t in ("input_text", "inputtext", "type", "input"):
+        elif t in ("input", "inputtext", "type", "input_text"):
             text = p.get("text", p.get("value", ""))
             idx = p.get("index", "?")
             if comment:
                 step_lines.append(comment)
             step_lines.append(
-                f'    # TODO: Replace with actual selector (agent typed into element index={idx})'
+                f"    # Agent typed into element index={idx}"
             )
             step_lines.append(f'    # page.locator("...").fill("{text}")')
 
@@ -163,13 +185,23 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
             delta = amount if direction == "down" else -amount
             step_lines.append(f"    page.mouse.wheel(0, {delta})")
 
-        elif t in ("key_press", "keypress", "press_key", "presskey"):
+        elif t in ("key_press", "keypress", "press_key", "presskey", "sendkeys", "send_keys"):
             key = p.get("key", "")
             step_lines.append(f'    page.keyboard.press("{key}")')
+
+        elif t in ("evaluate",):
+            code = p.get("code", p.get("js_code", ""))
+            if comment:
+                step_lines.append(comment)
+            step_lines.append(f'    page.evaluate("{code}")')
 
         elif t == "wait":
             ms = int(float(str(p.get("duration", p.get("seconds", 2)))) * 1000)
             step_lines.append(f"    page.wait_for_timeout({ms})")
+
+        elif t == "done":
+            text = p.get("text", "")
+            step_lines.append(f'    # Agent done: {text[:150]}')
 
         else:
             step_lines.append(f"    # Unsupported: {t}({p})")
