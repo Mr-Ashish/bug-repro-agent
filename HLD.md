@@ -2,7 +2,7 @@
 
 > **Hackathon:** Browser-Use Hackathon, July 4 2026, Bengaluru
 > **Target app:** [Plane](https://github.com/makeplane/plane) (makeplane) — open-source project management
-> **One-liner:** A Grok skill that, given a GitHub issue URL from Plane, autonomously reproduces the bug in a running local Plane instance using **browser-use** (Python) for browser automation, then emits a deterministic Playwright script + evidence artifacts so the reproduction can be replayed without the agent.
+> **One-liner:** Given a GitHub issue URL, autonomously reproduces the bug in a running local Plane instance using browser-use (Python) for browser automation, and emits evidence artifacts (screenshots, action log, verdict, traces).
 
 ---
 
@@ -33,21 +33,14 @@ This agent is a **bug reproducer**. It does not fix, patch, or resolve bugs. It 
 │  Internally uses /loop for autonomous execution             │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                   THE LOOP                            │  │
+│  │  python scripts/drive.py --issue <N>                  │  │
 │  │                                                       │  │
-│  │  1. READ ──→ 2. PLAN ──→ 3. SEED ──→                │  │
-│  │                                                       │  │
-│  │  ──→ 4. DRIVE ──→ 5. VERIFY ──→ 6. EMIT             │  │
-│  │          ↑              │                              │  │
-│  │          └──── retry ───┘ (if not reproduced)         │  │
-│  │                                                       │  │
+│  │  1. gh issue view → fetch title + body                │  │
+│  │  2. Build prompt (generic template + issue body)      │  │
+│  │  3. browser-use Agent → drive Chrome via CDP          │  │
+│  │  4. Parse verdict: REPRODUCED / NOT / INCONCLUSIVE    │  │
+│  │  5. Save artifacts to reproductions/<N>/              │  │
 │  └───────────────────────────────────────────────────────┘  │
-│                                                             │
-│  EXIT CONDITIONS:                                           │
-│  ✅ Bug reproduced → emit artifacts, exit success           │
-│  ❌ Max retries (5) → emit partial evidence, exit failure   │
-│  🚨 Fatal error → exit with error report                    │
-│  💰 Token budget exceeded → safety exit                     │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
           │                              │
@@ -65,45 +58,19 @@ This agent is a **bug reproducer**. It does not fix, patch, or resolve bugs. It 
 
 ---
 
-## The Two-Phase Model
+## How `drive.py` Works
 
-### Phase 1 — AUTHOR (agentic, expensive, once per bug)
-
-`scripts/drive.py` fetches the issue, builds a prompt, runs a browser-use agent, and saves everything.
+One script does everything. No multi-phase orchestration.
 
 ```
-issue URL/number
-    │
-    ▼
-gh issue view → title + body
-    │
-    ▼
-generic prompt template + issue body + Plane creds
-    │
-    ▼
-browser-use Agent → Chrome CDP → Plane
-    │
-    ▼
-VERDICT: REPRODUCED | <summary>   ← agent's structured output
-    │
-    ▼
-reproductions/<N>/               ← all artifacts saved
-    ├── issue.json
-    ├── action-log.json
-    ├── evidence-*.png
-    ├── verdict.md
-    └── traces/
+python scripts/drive.py --issue 9329
+
+    1. gh issue view 9329 → title + body
+    2. Generic prompt template + issue body + Plane creds → task
+    3. browser-use Agent(task=...) → Chrome CDP → Plane
+    4. Agent ends with: VERDICT: REPRODUCED | <summary>
+    5. Parse verdict, save all artifacts to reproductions/9329/
 ```
-
-### Phase 2 — REPLAY (deterministic, cheap, N times)
-
-The emitted `repro.spec.ts` is a standard Playwright test. No agent, no browser-use, no LLM.
-
-```bash
-npx playwright test reproductions/9329/repro.spec.ts
-```
-
-Assertions baked in from the oracle spec. Runs in seconds. Becomes a regression test.
 
 ---
 
@@ -148,15 +115,13 @@ All artifacts saved to `reproductions/<issue-number>/`: screenshots, action log,
 
 ---
 
-## Roles — Who Does What
+## Roles
 
-| Role | Who | Why |
-|------|-----|-----|
-| **Meta-agent (brain)** | Claude Code via Grok skill + /loop | Reads issues, plans, decides, judges, compiles. The only thing that reasons. |
-| **Browser hands** | browser-use Agent (Claude Sonnet 4 via OpenRouter) | Resolves NL task → DOM actions via Playwright. In-process Python library, no server. |
-| **Target app** | Plane (local docker-compose) | The app under test. Passive — just runs. |
-| **Verification oracle** | Claude Code (vision) | Screenshots → judgment. Same agent, different phase. |
-| **Replay runtime** | Playwright (npx) | Runs emitted `.spec.ts`. No agent in the loop. |
+| Role | Who |
+|------|-----|
+| **Driver script** | `scripts/drive.py` — fetches, prompts, runs, saves |
+| **Browser agent** | browser-use Agent (Claude Sonnet 4 via OpenRouter) — drives Chrome |
+| **Target app** | Plane (local docker-compose on `:3000`) |
 
 ---
 
@@ -176,9 +141,9 @@ All artifacts saved to `reproductions/<issue-number>/`: screenshots, action log,
 
 ---
 
-## Plane Adapter Knowledge
+## Plane Knowledge
 
-Baked into the skill and `lib/plane-adapter.ts`:
+Configured via `.env` and injected into the prompt by `drive.py`:
 
 | Knowledge | Value |
 |-----------|-------|
@@ -210,26 +175,21 @@ The agent works on any Plane issue. These are good demos because they're visual 
 ```
 bug-repro-agent/
 ├── scripts/
-│   └── drive.py                      ← main driver (fetch → prompt → drive → save)
+│   └── drive.py                      ← the entire agent (375 lines)
 ├── .claude/skills/repro-agent/
 │   └── SKILL.md                      ← skill definition
-├── lib/
-│   ├── plane_config.py               ← Plane config (Python)
-│   ├── plane-adapter.ts              ← Plane config (TypeScript, for replay specs)
-│   ├── repro-plan.schema.ts          ← TypeScript types
-│   ├── artifact-emitter.ts           ← generates repro.spec.ts + verdict.md
-│   └── __init__.py
 ├── reproductions/                    ← output directory (populated per-run)
 │   └── <issue-number>/
-│       ├── issue.json                ← fetched issue content
-│       ├── action-log.json           ← step-by-step agent trace
-│       ├── evidence-*.png            ← screenshots
-│       ├── verdict.md                ← parsed verdict + stats
-│       └── traces/full-trace.json    ← complete agent history
+│       ├── issue.json
+│       ├── action-log.json
+│       ├── evidence-*.png
+│       ├── verdict.md
+│       └── traces/full-trace.json
+├── .env.example                      ← config template
+├── requirements.txt                  ← Python deps
+├── pyproject.toml                    ← Python project config
 ├── DESIGN.md
 ├── HLD.md                            ← this file
-├── package.json
-├── tsconfig.json
 └── plane/                            ← Plane clone (gitignored)
 ```
 
@@ -237,31 +197,12 @@ bug-repro-agent/
 
 ## Demo Structure (Hackathon Stage)
 
-**Goal:** Show the full loop live, then prove the replay is agent-free.
-
-**Three beats, ~4 min total:**
+**Two beats, ~3 min total:**
 
 | Beat | Goal | Key moment |
 |------|------|-----------|
-| **Live reproduction** (~2 min) | Show the agent reproducing #9329 end-to-end | Audience sees browser moving autonomously |
-| **Artifact inspection** (~1 min) | Show what the agent produced | `repro.spec.ts`, `verdict.md`, screenshots/video |
-| **Deterministic replay** (~1 min) | Prove the test runs without agent/LLM | `npx playwright test` completes in seconds |
-
-**Principle:** "Pay for the agent once, replay forever." Repeat with #9050 if time allows.
-
----
-
-## Out of Scope
-
-| Cut | Reason |
-|-----|--------|
-| Temporal / Dagger replay runtime | `npx playwright test` is enough |
-| Testcontainers / per-run isolation | Plane already runs via docker-compose |
-| Multi-app support | Hardcoded to Plane — swap adapter later |
-| OpenRouter judge | Claude Code IS the judge |
-| Python orchestrator | Replaced by skill + /loop |
-| HAR capture | Screenshots + video are enough |
-| Visual diff oracle | Screenshot + Claude vision is the oracle |
+| **Live reproduction** (~2 min) | Run `drive.py --issue 9329` live | Audience sees browser moving autonomously |
+| **Artifact inspection** (~1 min) | Show verdict.md, screenshots, action-log | Evidence the bug was found |
 
 ---
 
@@ -269,16 +210,9 @@ bug-repro-agent/
 
 | Term | Definition |
 |------|-----------|
-| **repro-agent** | The system. Name used everywhere — code, docs, demo. |
-| **Brain** | Claude Code running the /repro skill. Plans, reasons, judges. The only thing that thinks. |
-| **Hands** | browser-use Agent (Python) — resolves NL task → DOM actions via built-in Playwright. In-process, no server. |
-| **Skill** | `.claude/skills/repro-agent/SKILL.md` — the packaged prompt + instructions. |
-| **/loop** | Grok's autonomous execution mode. The skill runs inside it. |
-| **Author (Phase 1)** | Agent-driven reproduction. Expensive, once per bug. |
-| **Replay (Phase 2)** | Deterministic Playwright test. Cheap, N times. |
-| **Oracle** | The VERIFY mechanism. Screenshot + Claude vision → structured verdict `{reproduced, confidence, reasoning}`. |
-| **Adapter** | Plane-specific knowledge (URLs, creds, nav patterns, API endpoints). `lib/plane_config.py` (Python) / `lib/plane-adapter.ts` (TypeScript replay). |
-| **Artifact bundle** | The output: `repro-plan.json` + `repro.spec.ts` + `action-log.json` + `evidence/` + `verdict.md`. |
-| **Seed** | Creating required app state before reproduction (issues, stickies, etc.). |
-| **Action log** | `reproductions/<issue>/action-log.json` — every browser-use agent step during DRIVE, used by EMIT to generate `repro.spec.ts`. |
-| **Verdict** | Oracle output: `{ reproduced: bool, confidence: high/medium/low, reasoning: string, evidence_file: path }`. Values are **REPRODUCED**, **NOT REPRODUCED**, or **INCONCLUSIVE** — never "FIXED" or "RESOLVED". |
+| **repro-agent** | The system. |
+| **drive.py** | The single Python script that does everything. |
+| **browser-use** | Python library — resolves NL task → DOM actions via built-in Playwright. In-process, no server. |
+| **Verdict** | `REPRODUCED`, `NOT_REPRODUCED`, or `INCONCLUSIVE`. Structured line parsed from agent output. |
+| **Artifact bundle** | The output: `issue.json` + `action-log.json` + `evidence-*.png` + `verdict.md` + `traces/`. |
+| **Action log** | `reproductions/<issue>/action-log.json` — every browser-use agent step (thought, action, result, URL). |

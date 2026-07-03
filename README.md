@@ -57,7 +57,6 @@ reproductions/9329/
 
 ```bash
 pip install browser-use python-dotenv
-npm install                          # for Playwright replay (optional)
 cp .env.example .env                 # add OPENROUTER_API_KEY + CDP_URL
 ```
 

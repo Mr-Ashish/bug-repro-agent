@@ -1,7 +1,7 @@
 [project]
 name = "repro-agent"
 version = "0.1.0"
-description = "Bug reproduction agent for Plane — browser-use + Playwright"
+description = "Bug reproduction agent — reproduce any GitHub issue in a running Plane instance"
 requires-python = ">=3.11"
 dependencies = [
     "browser-use>=1.0.0",
