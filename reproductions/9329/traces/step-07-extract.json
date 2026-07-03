@@ -1,0 +1,26 @@
+{
+  "step": 7,
+  "action": "extract",
+  "instruction": "What page am I on? Is this a dashboard or login page?",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/extract",
+    "body": {
+      "instruction": "What page am I on? Is this a dashboard or login page?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "extraction": "You are on a dashboard page. The page elements suggest various functionalities typically found on a user dashboard, such as workspace switcher, quick links, and recent activities. Additionally, greetings and date/time information reinforce this being a personalized dashboard experience."
+        },
+        "actionId": "7e2caf1b-ceff-4db6-9c87-309c6f0379db"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 2631,
+  "ts": "2026-07-03T17:53:49.893Z"
+}

@@ -1,0 +1,23 @@
+{
+  "issue": {
+    "number": 9329,
+    "title": "Inline work item creation shows generic error when title exceeds 255 characters",
+    "url": "https://github.com/makeplane/plane/issues/9329"
+  },
+  "bugClass": "form-validation",
+  "preconditions": [
+    "Logged in as admin",
+    "Navigated to a project Work Items list view (not sidebar)"
+  ],
+  "steps": [
+    "Navigate to the SEED project Work Items list view",
+    "Click the inline 'Add work item' button (not modal/sidebar)",
+    "Type or paste a title that is exactly 256 characters long",
+    "Press Enter to submit"
+  ],
+  "oracle": {
+    "type": "screenshot-vision",
+    "expected": "A generic error message like 'Some error occurred. Please try again.' appears instead of a descriptive validation message about title length exceeding 255 characters"
+  },
+  "teardown": "None needed — failed creation leaves no artifact"
+}

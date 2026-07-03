@@ -1,0 +1,122 @@
+[
+  {
+    "step": 1,
+    "action": "session",
+    "instruction": "Create Stagehand session",
+    "result": "session_id=afa896d0-b5e2-4567-980a-797e5e1741b3",
+    "durationMs": 24,
+    "ts": "2026-07-03T17:53:17.693Z"
+  },
+  {
+    "step": 2,
+    "action": "navigate",
+    "instruction": "http://localhost:3000",
+    "result": "ok",
+    "durationMs": 1476,
+    "ts": "2026-07-03T17:53:19.169Z"
+  },
+  {
+    "step": 3,
+    "action": "act",
+    "instruction": "Click on the email input field and type \"admin@admin.com\"",
+    "result": "ok",
+    "durationMs": 2564,
+    "ts": "2026-07-03T17:53:24.736Z"
+  },
+  {
+    "step": 4,
+    "action": "act",
+    "instruction": "Click the Continue button",
+    "result": "ok",
+    "durationMs": 1944,
+    "ts": "2026-07-03T17:53:28.682Z"
+  },
+  {
+    "step": 5,
+    "action": "act",
+    "instruction": "Click on the password input field and type \"qweQWE123!@\"",
+    "result": "ok",
+    "durationMs": 1693,
+    "ts": "2026-07-03T17:53:35.376Z"
+  },
+  {
+    "step": 6,
+    "action": "act",
+    "instruction": "Click the \"Go to workspace\" button",
+    "result": "ok",
+    "durationMs": 1881,
+    "ts": "2026-07-03T17:53:39.259Z"
+  },
+  {
+    "step": 7,
+    "action": "extract",
+    "instruction": "What page am I on? Is this a dashboard or login page?",
+    "result": "ok",
+    "durationMs": 2631,
+    "ts": "2026-07-03T17:53:49.893Z"
+  },
+  {
+    "step": 8,
+    "action": "navigate",
+    "instruction": "http://localhost:3000/plane-dev/projects/9e2a160f-a44f-4777-a761-564ab5e572a4/issues",
+    "result": "ok",
+    "durationMs": 1351,
+    "ts": "2026-07-03T17:53:51.244Z"
+  },
+  {
+    "step": 9,
+    "action": "extract",
+    "instruction": "What page am I on? Can I see work items or issues?",
+    "result": "ok",
+    "durationMs": 8347,
+    "ts": "2026-07-03T17:54:03.593Z"
+  },
+  {
+    "step": 10,
+    "action": "act",
+    "instruction": "Click the \"Add work item\" button",
+    "result": "ok",
+    "durationMs": 4051,
+    "ts": "2026-07-03T17:54:07.644Z"
+  },
+  {
+    "step": 11,
+    "action": "act",
+    "instruction": "Click on the Title input field and type the following text: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "result": "ok",
+    "durationMs": 5701,
+    "ts": "2026-07-03T17:54:15.347Z"
+  },
+  {
+    "step": 12,
+    "action": "act",
+    "instruction": "Press the Enter key to submit the work item",
+    "result": "ok",
+    "durationMs": 2884,
+    "ts": "2026-07-03T17:54:19.233Z"
+  },
+  {
+    "step": 13,
+    "action": "extract",
+    "instruction": "Is there any error message, validation message, or toast? Look for text mentioning \"255\", \"characters\", \"error\", or \"try again\". Report the exact text.",
+    "result": "ok",
+    "durationMs": 3086,
+    "ts": "2026-07-03T17:54:27.322Z"
+  },
+  {
+    "step": 14,
+    "action": "observe",
+    "instruction": "Find any red text, validation messages, error banners, or toast notifications",
+    "result": "ok",
+    "durationMs": 2333,
+    "ts": "2026-07-03T17:54:29.656Z"
+  },
+  {
+    "step": 15,
+    "action": "extract",
+    "instruction": "After submitting a 256-character title, what happened? Answer DESCRIPTIVE if you see \"Title should be less than 255 characters\", GENERIC if you see \"Some error occurred\", or NONE if no error appeared.",
+    "result": "ok",
+    "durationMs": 2464,
+    "ts": "2026-07-03T17:54:32.120Z"
+  }
+]

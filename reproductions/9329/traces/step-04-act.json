@@ -1,0 +1,29 @@
+{
+  "step": 4,
+  "action": "act",
+  "instruction": "Click the Continue button",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/act",
+    "body": {
+      "input": "Click the Continue button"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "success": false,
+          "message": "Failed to perform act: No action found",
+          "actionDescription": "Click the Continue button",
+          "actions": []
+        },
+        "actionId": "042209ab-075f-4a0a-8a87-43a6f6fc6e23"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 1944,
+  "ts": "2026-07-03T17:53:28.682Z"
+}

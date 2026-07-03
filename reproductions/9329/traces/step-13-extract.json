@@ -1,0 +1,26 @@
+{
+  "step": 13,
+  "action": "extract",
+  "instruction": "Is there any error message, validation message, or toast? Look for text mentioning \"255\", \"characters\", \"error\", or \"try again\". Report the exact text.",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/extract",
+    "body": {
+      "instruction": "Is there any error message, validation message, or toast? Look for text mentioning \"255\", \"characters\", \"error\", or \"try again\". Report the exact text."
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "extraction": "Title should be less than 255 characters"
+        },
+        "actionId": "8bd89b49-b426-4fa9-b8cf-7bc43ae2f09e"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 3086,
+  "ts": "2026-07-03T17:54:27.322Z"
+}

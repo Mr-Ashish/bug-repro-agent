@@ -1,0 +1,36 @@
+{
+  "step": 10,
+  "action": "act",
+  "instruction": "Click the \"Add work item\" button",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/act",
+    "body": {
+      "input": "Click the \"Add work item\" button"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "success": true,
+          "message": "Action [click] performed successfully on selector: xpath=/html[1]/body[1]/div[5]/main[1]/div[1]/div[2]/div[1]/div[1]/div[2]/main[1]/div[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+          "actionDescription": "button: Add work item",
+          "actions": [
+            {
+              "selector": "xpath=/html[1]/body[1]/div[5]/main[1]/div[1]/div[2]/div[1]/div[1]/div[2]/main[1]/div[1]/div[1]/div[1]/div[1]/div[2]/button[1]",
+              "description": "button: Add work item",
+              "method": "click",
+              "arguments": []
+            }
+          ]
+        },
+        "actionId": "106b2089-615a-40a9-8afc-08f3281686cf"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 4051,
+  "ts": "2026-07-03T17:54:07.644Z"
+}

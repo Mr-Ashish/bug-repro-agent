@@ -1,0 +1,26 @@
+{
+  "step": 15,
+  "action": "extract",
+  "instruction": "After submitting a 256-character title, what happened? Answer DESCRIPTIVE if you see \"Title should be less than 255 characters\", GENERIC if you see \"Some error occurred\", or NONE if no error appeared.",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/extract",
+    "body": {
+      "instruction": "After submitting a 256-character title, what happened? Answer DESCRIPTIVE if you see \"Title should be less than 255 characters\", GENERIC if you see \"Some error occurred\", or NONE if no error appeared."
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "extraction": "DESCRIPTIVE - Title should be less than 255 characters"
+        },
+        "actionId": "294b17cb-f1be-46c4-9d29-8e718f9c33bd"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 2464,
+  "ts": "2026-07-03T17:54:32.120Z"
+}

@@ -1,0 +1,26 @@
+{
+  "step": 9,
+  "action": "extract",
+  "instruction": "What page am I on? Can I see work items or issues?",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/extract",
+    "body": {
+      "instruction": "What page am I on? Can I see work items or issues?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "extraction": "\nPage Title: Seed Demo Project - Work items\n\n- Work items are visible under various headings such as:\n  - \"Work Items\"\n  - \"New work item\"\n  - Specific work item titles such as \"All work items\" with \"31\" visible items.\n\n## Work Items\n1. **SEED-31**: Test normal title\n2. **SEED-30**: External: Mobile app crash on notifications\n3. **SEED-29**: External: API returns 500 on large payloads\n4. **SEED-28**: External: UI glitch on Safari\n5. **SEED-27**: External: Feature request — bulk editing\n6. **SEED-26**: External: User reports login timeout\n7. **SEED-25**: Add audit log tracking\n8. **SEED-24**: Create API rate limiting\n9. **SEED-23**: Implement Gantt chart view\n10. **SEED-22**: Build reporting and charts\n11. **SEED-21**: Add webhook integration support\n12. **SEED-20**: Create custom fields system\n13. **SEED-19**: Implement issue templates\n14. **SEED-18**: Build bulk issue operations\n15. **SEED-17**: Add keyboard shortcuts\n16. **SEED-16**: Create mobile-responsive layouts\n17. **SEED-15**: Implement issue import/export\n18. **SEED-14**: Add dark mode theme support\n19. **SEED-13**: Build activity timeline component\n20. **SEED-12**: Create workspace invitation flow\n\n### Sidebar Navigation Includes:\n- \"Home\"\n- \"Drafts\"\n- \"Your work\"\n- \"Stickies\"\n\n### Categories of Work Items (Buttons/States):\n- Edit\n- Make a copy\n- Open in new tab\n- Copy link\n- Archive\n- Delete\n\n### Instructions:\nThe visibility is clearly for tasks related to a project management platform possibly detailing functionalities or issues within a project.\n\n## Conclusion\nYou are currently on a page named \"Seed Demo Project - Work items\" where various work items and associated tasks or issues are displayed as per the structure provided."
+        },
+        "actionId": "dc0dd39f-b819-4277-b014-cc0189506cf8"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 8347,
+  "ts": "2026-07-03T17:54:03.593Z"
+}

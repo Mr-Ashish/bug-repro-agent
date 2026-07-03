@@ -1,0 +1,29 @@
+{
+  "step": 3,
+  "action": "act",
+  "instruction": "Click on the email input field and type \"admin@admin.com\"",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/act",
+    "body": {
+      "input": "Click on the email input field and type \"admin@admin.com\""
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "success": false,
+          "message": "Failed to perform act: No action found",
+          "actionDescription": "Click on the email input field and type \"admin@admin.com\"",
+          "actions": []
+        },
+        "actionId": "b3feca4c-ce20-47d2-8714-5bf98348c523"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 2564,
+  "ts": "2026-07-03T17:53:24.736Z"
+}

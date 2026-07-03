@@ -1,6 +1,9 @@
 plane/
 node_modules/
 dist/
-reproductions/
 .env
 *.log
+
+# Trace files with full DOM snapshots (too large for git)
+reproductions/*/traces/full-trace.json
+reproductions/*/traces/step-*-navigate.json

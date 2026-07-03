@@ -1,0 +1,29 @@
+{
+  "step": 1,
+  "action": "session",
+  "instruction": "Create Stagehand session",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/start",
+    "body": {
+      "modelName": "gpt-4o",
+      "browser": {
+        "type": "local",
+        "cdpUrl": "ws://localhost:9222/devtools/browser/2204546f-b687-434c-9e78-c656e5d9bc42"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "sessionId": "afa896d0-b5e2-4567-980a-797e5e1741b3",
+        "available": true,
+        "cdpUrl": "ws://localhost:9222/devtools/browser/2204546f-b687-434c-9e78-c656e5d9bc42"
+      }
+    }
+  },
+  "result": "session_id=afa896d0-b5e2-4567-980a-797e5e1741b3",
+  "durationMs": 24,
+  "ts": "2026-07-03T17:53:17.693Z"
+}

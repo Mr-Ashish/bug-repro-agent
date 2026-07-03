@@ -1,0 +1,49 @@
+{
+  "step": 14,
+  "action": "observe",
+  "instruction": "Find any red text, validation messages, error banners, or toast notifications",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/afa896d0-b5e2-4567-980a-797e5e1741b3/observe",
+    "body": {
+      "instruction": "Find any red text, validation messages, error banners, or toast notifications"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": [
+          {
+            "selector": "xpath=/html[1]/body[1]/div[6]/div[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/div[1]/form[1]/div[1]/div[2]/div[1]/span[1]",
+            "description": "Validation message indicating the title should be less than 255 characters",
+            "method": "scrollTo",
+            "arguments": []
+          },
+          {
+            "selector": "xpath=/html[1]/body[1]/div[6]/div[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/div[1]/form[1]/div[3]/div[1]/div[1]/div[1]/div[1]/button[1]",
+            "description": "Button labeled Backlog",
+            "method": "click",
+            "arguments": []
+          },
+          {
+            "selector": "xpath=/html[1]/body[1]/div[6]/div[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/div[1]/form[1]/div[3]/div[1]/div[1]/div[6]/div[1]/button[1]",
+            "description": "Button labeled Due date",
+            "method": "click",
+            "arguments": []
+          },
+          {
+            "selector": "xpath=/html[1]/body[1]/div[6]/div[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/div[1]/form[1]/div[3]/div[2]",
+            "description": "Div containing buttons for creating more, discarding, and saving, related to work item creation",
+            "method": "scrollTo",
+            "arguments": []
+          }
+        ],
+        "actionId": "4d729e87-2de2-412b-a8c7-b41c00e02b13"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 2333,
+  "ts": "2026-07-03T17:54:29.656Z"
+}
