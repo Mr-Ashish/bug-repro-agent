@@ -9,10 +9,11 @@ __pycache__/
 *.pyc
 *.pyo
 
-# browser-use generated media (large, regenerated per run)
+# browser-use generated artifacts (regenerated per run)
 reproductions/*/*.mp4
 reproductions/*/*.gif
 reproductions/*/conversation.json
+reproductions/*/issue.json
 
 # Trace files with full DOM snapshots (too large for git)
 reproductions/*/traces/full-trace.json

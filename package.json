@@ -4,15 +4,8 @@
   "description": "Autonomous bug reproduction agent — GitHub issue to Playwright test",
   "type": "module",
   "scripts": {
-    "drive": "python scripts/drive.py --issue 9329",
-    "drive:9329": "python scripts/drive.py --issue 9329",
-    "drive:9050": "python scripts/drive.py --issue 9050",
-    "drive:9124": "python scripts/drive.py --issue 9124",
-    "replay": "npx playwright test reproductions/9329/repro.spec.ts",
-    "replay:9329": "npx playwright test reproductions/9329/repro.spec.ts",
-    "replay:9050": "npx playwright test reproductions/9050/repro.spec.ts",
-    "replay:9124": "npx playwright test reproductions/9124/repro.spec.ts",
-    "replay:all": "npx playwright test",
+    "drive": "python scripts/drive.py",
+    "replay": "npx playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

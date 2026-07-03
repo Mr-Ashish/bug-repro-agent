@@ -1,116 +1,99 @@
 # repro-agent
 
-Point a browser agent at a GitHub issue, watch it reproduce the bug — live.
+Point a browser agent at any GitHub issue. Watch it reproduce the bug — live.
 
 Built for the **Browser-Use Hackathon** (July 4, 2026, Bengaluru).
 
 ## What it does
 
-```
-/repro https://github.com/makeplane/plane/issues/9329
-```
-
-1. **Reads** the GitHub issue, extracts steps to reproduce
-2. **Plans** the reproduction — classifies bug type, structures steps
-3. **Seeds** the app with required data state
-4. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) (Python agent on Playwright) to execute the steps
-5. **Verifies** the bug reproduced (agent result analysis)
-6. **Emits** a deterministic Playwright test + evidence artifacts
-
-Then replay forever without the agent:
-
 ```bash
-npx playwright test reproductions/9329/repro.spec.ts
+python scripts/drive.py --issue 9329
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/5432
 ```
+
+1. **Fetches** the GitHub issue via `gh` CLI
+2. **Builds** a task prompt from the issue body (no hardcoded steps)
+3. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) to reproduce the bug
+4. **Parses** the agent's structured verdict: `VERDICT: REPRODUCED | <summary>`
+5. **Saves** evidence: screenshots, action log, GIF, video, full trace
+
+Works on **any** Plane issue — not just pre-selected ones.
 
 ## Architecture
 
 ```
-Brain:  Claude Code (Grok skill + /loop) — plans, reasons, judges
-Hands:  browser-use (Python, in-process) — Claude Sonnet 4 via OpenRouter → Playwright
-Target: Plane (local docker-compose) — the app under test
+Fetch:  gh issue view → issue title + body
+Prompt: generic template + issue body + Plane credentials
+Agent:  browser-use (Python) → Claude Sonnet 4 via OpenRouter → Chrome CDP
+Target: Plane (local docker-compose)
+Output: reproductions/<issue-number>/ (verdict, screenshots, traces)
 ```
 
-**Phase 1 (Author):** Python `drive.py` runs browser-use agent. Expensive, once.
-**Phase 2 (Replay):** Emitted Playwright `repro.spec.ts` runs. Cheap, N times.
+**One script does everything:** `scripts/drive.py` fetches, prompts, drives, parses, saves.
 
-See [HLD.md](./HLD.md) for the full locked architecture.
-
-## Output (artifact bundle)
+## Output
 
 ```
 reproductions/9329/
-├── repro-plan.json          # structured reproduction plan
+├── issue.json               # fetched issue (title, body, URL)
 ├── action-log.json          # every agent step (thought, actions, result)
-├── repro.spec.ts            # deterministic Playwright test
-├── traces/
-│   └── full-trace.json      # complete browser-use agent history
-├── conversation.json        # full LLM conversation log
 ├── evidence-*.png           # screenshots at each step
 ├── agent-run.gif            # animated GIF of browser session
-└── verdict.md               # agent's judgment + confidence
+├── conversation.json        # full LLM conversation
+├── traces/
+│   └── full-trace.json      # complete browser-use agent history
+└── verdict.md               # parsed verdict + agent result + run stats
 ```
-
-## Demo bugs
-
-| # | Bug | Class |
-|---|-----|-------|
-| [9329](https://github.com/makeplane/plane/issues/9329) | 255+ char title shows generic error | form-validation |
-| [9050](https://github.com/makeplane/plane/issues/9050) | Deleted stickies reappear on reload | state-persistence |
-| [9124](https://github.com/makeplane/plane/issues/9124) | Sub-task expand requires 3 clicks | ui-interaction |
 
 ## Prerequisites
 
-- [Plane](https://github.com/makeplane/plane) running locally via `docker-compose-local.yml` on `:3000`
+- [Plane](https://github.com/makeplane/plane) running locally on `:3000`
 - Chrome with `--remote-debugging-port=9222`
 - Python 3.11+
-- Node.js 20+ (for Playwright replay)
 - OpenRouter API key
 - `gh` CLI authenticated
 
 ## Setup
 
 ```bash
-# Python (browser-use agent)
 pip install browser-use python-dotenv
-
-# Node.js (Playwright replay)
-npm install
-
-# Config
-cp .env.example .env  # add your OPENROUTER_API_KEY + CDP_URL
+npm install                          # for Playwright replay (optional)
+cp .env.example .env                 # add OPENROUTER_API_KEY + CDP_URL
 ```
 
-## Run the drive script
+## Usage
 
 ```bash
-# Reproduce issue #9329
+# By issue number (uses GITHUB_REPO from .env, default: makeplane/plane)
 python scripts/drive.py --issue 9329
 
-# Or via npm:
-npm run drive:9329
+# By full URL (auto-detects repo)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9050
 
-# Other issues:
-npm run drive:9050
-npm run drive:9124
+# Specify a different repo
+python scripts/drive.py --issue 42 --repo someorg/somerepo
 ```
 
-Artifacts go to `reproductions/9329/`. Inspect the agent trace:
-```bash
-cat reproductions/9329/action-log.json | python -m json.tool
-```
+## Verdict protocol
 
-## Replay (no agent, no LLM)
-
-```bash
-npx playwright test reproductions/9329/repro.spec.ts
-```
-
-## Run as a skill (from Grok)
+The agent is instructed to end with a structured verdict line:
 
 ```
-/repro https://github.com/makeplane/plane/issues/9329
+VERDICT: REPRODUCED | The 256-char title showed "Some error occurred" instead of a descriptive message
+VERDICT: NOT_REPRODUCED | The feature worked correctly — descriptive error was shown
+VERDICT: INCONCLUSIVE | Could not find the stickies section in the UI
 ```
+
+`drive.py` parses this with a regex — no per-issue keyword matching needed.
+
+## Design
+
+**Identity:** This agent is a **reproducer**, not a fixer.
+Allowed verdicts: `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
+
+**Prompt:** One generic template works for all issues. The issue body IS the reproduction plan — the LLM figures out the steps.
+
+See [HLD.md](./HLD.md) for full architecture and [DESIGN.md](./DESIGN.md) for the core principle.
 
 ## License
 

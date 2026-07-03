@@ -1,107 +1,63 @@
 ---
 name: repro-agent
-description: "Autonomously reproduce a Plane bug from a GitHub issue URL. Uses browser-use (Python) for browser automation. Emits a deterministic Playwright test + evidence artifacts."
+description: "Reproduce any Plane bug from a GitHub issue URL. Drives a real browser, emits evidence + verdict."
 ---
 
 # repro-agent
 
-## Goal
+## What it does
 
-Given `/repro <github-issue-url>`, autonomously reproduce the bug in a running local Plane instance and emit a deterministic Playwright test + evidence so the reproduction replays without you.
+Given a GitHub issue URL, this agent reproduces the bug in a running local Plane instance.
+It fetches the issue, drives a browser to execute the reproduction steps, and saves evidence.
 
-## Roles
+```
+python scripts/drive.py --issue 9329
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
+```
 
-- **You** = brain. Plan, reason, judge, compile.
-- **browser-use** (Python, in-process) = hands. `Agent(task=..., llm=...).run()` — resolves NL task to DOM actions via built-in Playwright. No server needed.
-- **Plane** (localhost:3000) = target app. Passive.
-
-## Model constraint
-
-browser-use model is configurable via `BROWSER_USE_MODEL` env var.
-- Default: `anthropic/claude-sonnet-4` (via OpenRouter)
-- Uses `ChatOpenAI` with OpenRouter base_url and `OPENROUTER_API_KEY`
-
-## Phases
-
-Execute autonomously via `/loop`: **READ → PLAN → SEED → DRIVE → VERIFY → EMIT**
-
-| Phase | Goal | Writes to disk |
-|-------|------|---------------|
-| PRE-CHECK | Confirm Plane (`:3000`) + Chrome CDP (`:9222`) are reachable. | — |
-| READ | Get the issue content via `gh issue view` | — |
-| PLAN | Classify the bug, structure preconditions + steps + oracle | `repro-plan.json` |
-| SEED | Ensure Plane has the data state the bug requires | — |
-| DRIVE | Run browser-use agent to execute reproduction steps | `action-log.json`, `traces/`, `evidence-*.png`, `agent-run.gif` |
-| VERIFY | Analyze agent result → structured verdict | `verdict.md` |
-| EMIT | Generate replay artifacts from the action log | `repro.spec.ts` |
+The script handles everything: fetch the issue via `gh`, build the prompt, run the browser-use agent, parse the verdict, save artifacts.
 
 ## Identity — Reproducer, NOT Fixer
 
-This agent **reproduces** bugs. It does not fix, patch, or resolve them. It observes and reports.
+This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 
-**Allowed verdict values:** `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
-**Never use:** "FIXED", "BUG APPEARS FIXED", "RESOLVED", or any language implying the agent repaired anything.
+**Allowed verdicts:** `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
+**Never use:** "FIXED", "RESOLVED", or any language implying the agent repaired anything.
+
+## How it works
+
+1. `gh issue view` fetches the issue title + body
+2. A generic prompt template injects the issue content + Plane login credentials
+3. browser-use agent drives Chrome via CDP to reproduce the steps described in the issue
+4. The agent ends with a structured verdict line: `VERDICT: REPRODUCED | <summary>`
+5. `drive.py` parses that line, saves all artifacts to `reproductions/<issue-number>/`
 
 ## Constraints
 
-- **Disk-first.** Write `repro-plan.json` during PLAN, save all artifacts during DRIVE. State survives context loss.
-- **Login is step zero.** Every DRIVE task prompt includes login. The emitted `repro.spec.ts` must also begin with login.
-- **Log every step.** browser-use `AgentHistoryList` captures every step — thoughts, actions, results, screenshots. Saved to `action-log.json` and `traces/full-trace.json`.
-- **Adapt, don't repeat.** On retry, examine the evidence, reason about what went wrong, and change the task prompt. Never re-run identical failed prompts.
-- **Max 5 DRIVE→VERIFY cycles.** After that, emit partial evidence with a "NOT REPRODUCED" or "INCONCLUSIVE" verdict.
-- **Verdict is structured.** `{ reproduced: bool, confidence: high|medium|low, reasoning: string, evidenceFile: path }`. Proceed to EMIT only when `reproduced=true AND confidence≥medium`.
+- **Any issue.** The prompt is built dynamically from the issue body — no hardcoded steps.
+- **Structured verdict.** The agent must end with `VERDICT: REPRODUCED|NOT_REPRODUCED|INCONCLUSIVE | <summary>`. Parsed by regex, not keyword matching.
+- **Disk-first.** All artifacts are saved during the run. State survives crashes.
+- **Max 50 steps.** The agent has up to 50 browser actions before it must conclude.
 
-## Execution
-
-- The main drive script is `scripts/drive.py`. Run with `python scripts/drive.py --issue <N>` or `npm run drive`.
-- browser-use connects to Chrome via CDP (env `CDP_URL`). No separate server process needed.
-- The agent handles login, navigation, and all actions via a single natural-language task prompt.
-- Built-in: screenshots (`history.screenshots()`), GIF (`generate_gif=True`), full trace (`history.save_to_file()`), video (`record_video_dir`).
-- `repro.spec.ts` is generated by translating `action-log.json` entries into Playwright API calls.
-
-## Traces
-
-browser-use saves rich traces automatically:
-- `traces/full-trace.json` — complete agent history (thoughts, actions, results, DOM state)
-- `action-log.json` — compact step-by-step log with thoughts, actions, results, URLs
-- `conversation.json` — full LLM conversation (every message sent/received)
-- `agent-run.gif` — animated GIF of the entire browser session
-- `evidence-*.png` — screenshots at each step
-
-Use traces to debug failed runs, inspect agent reasoning, and verify timing.
-
-## Exit conditions
-
-- ✅ Bug reproduced (confidence ≥ medium) → emit artifact bundle
-- ❌ 5 retries exhausted → emit partial evidence + failure verdict
-- 🚨 Fatal error (browser-use/Plane down) → exit with error
-- 💰 Token budget exceeded → safety exit
-
-## Domain knowledge
-
-See `lib/plane_config.py` (Python) or `lib/plane-adapter.ts` (TypeScript) for Plane URLs, credentials, workspace/project, nav patterns, API base, and existing seed data.
-
-## Artifact bundle
+## Artifacts
 
 All output goes to `reproductions/<issue-number>/`:
 
-| File | Purpose |
-|------|---------|
-| `repro-plan.json` | Structured reproduction plan |
-| `action-log.json` | Every agent step (thought + actions + result) |
-| `repro.spec.ts` | Deterministic Playwright test for replay |
+| File | What |
+|------|------|
+| `issue.json` | Fetched issue (title, body, URL) |
+| `action-log.json` | Every agent step (thought, actions, result, URL) |
+| `evidence-*.png` | Screenshots at each step |
+| `agent-run.gif` | Animated GIF of the session |
+| `conversation.json` | Full LLM conversation |
 | `traces/full-trace.json` | Complete browser-use agent history |
-| `conversation.json` | Full LLM conversation log |
-| `evidence-*.png` | Screenshots captured during reproduction |
-| `agent-run.gif` | Animated GIF of browser session |
-| `verdict.md` | Human-readable judgment |
+| `verdict.md` | Parsed verdict + agent result + run stats |
 
-## Lib reference
+## Config
 
-| Module | What it provides |
-|--------|-----------------|
-| `scripts/drive.py` | Main drive script — `python scripts/drive.py --issue <N>` |
-| `lib/plane_config.py` | Plane URLs, creds, nav patterns (Python) |
-| `lib/plane-adapter.ts` | `PlaneAdapter` — URLs, creds, nav patterns (TypeScript, for replay specs) |
-| `lib/repro-plan.schema.ts` | Types: `ReproPlan`, `ActionLogEntry`, `Verdict`, `BugClass` |
-| `lib/artifact-emitter.ts` | `writePlan`, `appendActionLog`, `writeVerdict`, `generateReproSpec`, `ensureReproDir` |
+All via `.env`:
+- `OPENROUTER_API_KEY` — LLM access
+- `BROWSER_USE_MODEL` — model (default: `anthropic/claude-sonnet-4`)
+- `CDP_URL` — Chrome CDP WebSocket
+- `PLANE_URL`, `PLANE_EMAIL`, `PLANE_PASSWORD`, `PLANE_WORKSPACE`
+- `GITHUB_REPO` — default repo for `--issue` (default: `makeplane/plane`)

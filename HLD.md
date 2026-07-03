@@ -69,20 +69,30 @@ This agent is a **bug reproducer**. It does not fix, patch, or resolve bugs. It 
 
 ### Phase 1 — AUTHOR (agentic, expensive, once per bug)
 
-Claude Code is the meta-agent. It reads the issue, reasons about steps, drives the browser via **browser-use** (Python agent on Playwright), judges the result, and compiles everything into deterministic artifacts.
+`scripts/drive.py` fetches the issue, builds a prompt, runs a browser-use agent, and saves everything.
 
 ```
-issue URL → READ → PLAN → SEED → DRIVE → VERIFY → EMIT
-                                                      │
-                                          ┌───────────┴───────────┐
-                                          │  repro-plan.json      │
-                                          │  repro.spec.ts        │
-                                          │  evidence/            │
-                                          │    screenshots/       │
-                                          │    video/             │
-                                          │    console.log        │
-                                          │  verdict.md           │
-                                          └───────────────────────┘
+issue URL/number
+    │
+    ▼
+gh issue view → title + body
+    │
+    ▼
+generic prompt template + issue body + Plane creds
+    │
+    ▼
+browser-use Agent → Chrome CDP → Plane
+    │
+    ▼
+VERDICT: REPRODUCED | <summary>   ← agent's structured output
+    │
+    ▼
+reproductions/<N>/               ← all artifacts saved
+    ├── issue.json
+    ├── action-log.json
+    ├── evidence-*.png
+    ├── verdict.md
+    └── traces/
 ```
 
 ### Phase 2 — REPLAY (deterministic, cheap, N times)
@@ -97,85 +107,44 @@ Assertions baked in from the oracle spec. Runs in seconds. Becomes a regression 
 
 ---
 
-## Phase Goals & Constraints
+## How It Works
 
-### PRE-CHECK
+### 1. Fetch
 
-**Goal:** Confirm infrastructure is live before entering the loop.
+`gh issue view <N> --repo makeplane/plane --json title,body,url,number`
 
-**Constraints:**
-- URL must be a GitHub issue (not PR, discussion, etc.)
-- Plane (`localhost:3000`) and Chrome CDP (`localhost:9222`) must respond
-- browser-use connects to Chrome via CDP — no separate server process
-- Any failure → exit with clear error, never enter the loop
+Gets the issue title and body. No manual input needed — the issue IS the reproduction plan.
 
-### READ
+### 2. Build prompt
 
-**Goal:** Extract structured reproduction information from the GitHub issue.
+A generic template injects the issue body + Plane credentials. The LLM reads the bug report and figures out its own steps. No hardcoded per-issue logic.
 
-**Constraints:**
-- Source is `gh issue view` (title, body, comments)
-- No disk writes — output lives in context for PLAN
+### 3. Drive
 
-### PLAN
+browser-use `Agent(task=prompt, llm=...).run()` drives Chrome via CDP. The agent logs in, navigates, executes steps, observes results. Max 50 steps.
 
-**Goal:** Classify the bug and produce a structured reproduction plan.
+### 4. Verdict
 
-**Constraints:**
-- Must write `repro-plan.json` to disk immediately (survives context loss)
-- Plan contains: issue metadata, bug class, preconditions, ordered steps, oracle spec, teardown
-- See `lib/repro-plan.schema.ts` for the canonical shape
+The prompt instructs the agent to end with a structured line:
+```
+VERDICT: REPRODUCED | <one-line summary>
+VERDICT: NOT_REPRODUCED | <one-line summary>
+VERDICT: INCONCLUSIVE | <one-line summary>
+```
+`drive.py` parses this with a regex. No per-issue keyword matching.
 
-### SEED
+### 5. Save
 
-**Goal:** Get Plane into the data state the bug requires.
-
-**Constraints:**
-- Use browser-use agent for visual operations (create stickies, navigate views)
-- Use Plane REST API for fast checks (project exists, issue counts)
-- Decide dynamically per bug — no fixed seeding strategy
-
-### DRIVE
-
-**Goal:** Execute the reproduction steps in the browser.
-
-**Constraints:**
-- Login is always step zero — every DRIVE begins with authentication
-- Every agent step is saved to `action-log.json` (thought, actions, result, timestamp)
-- Main drive script: `scripts/drive.py` (`npm run drive` or `python scripts/drive.py --issue <N>`)
-- Full agent history saved to `reproductions/<issue>/traces/full-trace.json` for introspection
-- On retry, adapt — examine evidence, reason about failure, change approach. Never replay identical failed steps.
-
-### VERIFY
-
-**Goal:** Determine whether the bug was reproduced.
-
-**Constraints:**
-- Evidence: screenshot of current page state
-- Judge: Claude Code vision (the oracle)
-- Verdict is structured: `{ reproduced, confidence, reasoning, evidenceFile }`
-- Proceed to EMIT only when `reproduced=true AND confidence≥medium`
-- Otherwise retry DRIVE (max 5 DRIVE→VERIFY cycles)
-
-### EMIT
-
-**Goal:** Generate deterministic replay artifacts from the action log.
-
-**Constraints:**
-- `repro.spec.ts` is generated by translating `action-log.json` → Playwright API calls. Must include login.
-- Evidence: screenshots, browser-use extracted content, agent GIF
-- `verdict.md`: human-readable report
-- Browser session ends here
-- All output to `reproductions/<issue-number>/`
+All artifacts saved to `reproductions/<issue-number>/`: screenshots, action log, verdict, traces, GIF, video.
 
 ### Exit Conditions
 
 | Condition | What happens |
 |-----------|-------------|
-| ✅ `reproduced=true, confidence≥medium` | EMIT artifacts, end session, exit |
-| ❌ 5 DRIVE→VERIFY cycles exhausted | Emit partial evidence + "could not reproduce" verdict |
+| ✅ Agent emits `VERDICT: REPRODUCED` | Artifacts saved, exit success |
+| ❌ Agent emits `NOT_REPRODUCED` or `INCONCLUSIVE` | Artifacts saved, exit |
 | 🚨 browser-use/Plane crash | Exit with error report |
-| 💰 Token budget exceeded | Safety exit with partial state |
+| 📊 50 steps exhausted | Agent must conclude with whatever evidence it has |
 
 ---
 
@@ -198,7 +167,7 @@ Assertions baked in from the oracle spec. Runs in seconds. Becomes a regression 
 | Library | `browser-use` (Python, `pip install browser-use`) |
 | Model | Claude Sonnet 4 via OpenRouter (`ChatOpenAI` with OpenRouter base_url) |
 | Connection | CDP to existing Chrome (`ws://localhost:9222/...`) |
-| Driver | `scripts/drive.py --issue <N>` |
+| Driver | `scripts/drive.py --issue <N>` or `--url <github-url>` |
 | Operations | Single `Agent(task=..., llm=...).run()` — agent handles all navigation/actions |
 | Built-in | Screenshots, GIF generation, conversation saving, video recording |
 | Traces | `history.save_to_file()` → `reproductions/<issue>/traces/full-trace.json` |
@@ -224,13 +193,15 @@ Baked into the skill and `lib/plane-adapter.ts`:
 
 ---
 
-## Demo Bugs
+## Demo Bugs (Hackathon Examples)
 
-| # | Bug | Repro Steps | Bug Class |
-|---|-----|-------------|-----------|
-| **9329** | 255+ char title shows generic error | Type long title → press Enter → see unhelpful error | form-validation |
-| **9050** | Deleted stickies reappear on reload | Delete a sticky → reload page → sticky is back | state-persistence |
-| **9124** | Sub-task expand requires 3 clicks | Click expand chevron → nothing → click again → nothing → 3rd click works | ui-interaction |
+The agent works on any Plane issue. These are good demos because they're visual and fast:
+
+| # | Bug | Bug Class |
+|---|-----|-----------|
+| **9329** | 255+ char title shows generic error | form-validation |
+| **9050** | Deleted stickies reappear on reload | state-persistence |
+| **9124** | Sub-task expand requires 3 clicks | ui-interaction |
 
 ---
 
@@ -238,26 +209,24 @@ Baked into the skill and `lib/plane-adapter.ts`:
 
 ```
 bug-repro-agent/
-├── .claude/
-│   └── skills/
-│       └── repro-agent/
-│           └── SKILL.md              ← skill prompt + /loop instructions
+├── scripts/
+│   └── drive.py                      ← main driver (fetch → prompt → drive → save)
+├── .claude/skills/repro-agent/
+│   └── SKILL.md                      ← skill definition
 ├── lib/
-│   ├── plane_config.py               ← Plane config (Python, for drive.py)
+│   ├── plane_config.py               ← Plane config (Python)
 │   ├── plane-adapter.ts              ← Plane config (TypeScript, for replay specs)
-│   ├── repro-plan.schema.ts          ← TypeScript types for repro-plan.json
+│   ├── repro-plan.schema.ts          ← TypeScript types
 │   ├── artifact-emitter.ts           ← generates repro.spec.ts + verdict.md
-│   └── __init__.py                   ← Python package marker
-├── reproductions/                    ← output (tracked in git)
-│   └── 9329/
-│       ├── repro-plan.json
-│       ├── action-log.json
-│       ├── repro.spec.ts
-│       ├── traces/                   ← browser-use agent history
-│       │   └── full-trace.json       ← complete agent run trace
-│       ├── evidence-*.png
-│       └── verdict.md
-├── DESIGN.md                         ← core design principle
+│   └── __init__.py
+├── reproductions/                    ← output directory (populated per-run)
+│   └── <issue-number>/
+│       ├── issue.json                ← fetched issue content
+│       ├── action-log.json           ← step-by-step agent trace
+│       ├── evidence-*.png            ← screenshots
+│       ├── verdict.md                ← parsed verdict + stats
+│       └── traces/full-trace.json    ← complete agent history
+├── DESIGN.md
 ├── HLD.md                            ← this file
 ├── package.json
 ├── tsconfig.json

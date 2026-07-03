@@ -1,12 +1,15 @@
-# Bug Reproduction Agent — Design Principle
+# Bug Reproduction Agent — Design Principles
 
 > **Full architecture:** [HLD.md](./HLD.md)
 
-## Core Insight
+## 1. The issue IS the plan
 
-Split every reproduction into **"agent-authored" vs "deterministic-runtime."**
+Don't hardcode reproduction steps. Fetch the issue body, inject it into a generic prompt, let the LLM figure out the steps. Works on any bug, not just pre-selected ones.
 
-- **Phase 1 (Author):** Claude Code reasons about the bug, drives the browser via browser-use (Python agent on Playwright), and compiles everything into deterministic artifacts. Expensive, once per bug.
-- **Phase 2 (Replay):** The emitted Playwright script runs without the agent. `npx playwright test`. Cheap, N times.
+## 2. Structured verdict, not keyword matching
 
-Reproduce once with intelligence, replay forever with determinism.
+The agent ends with `VERDICT: REPRODUCED | <summary>`. Parse that line with a regex. Don't write per-issue keyword matchers — they break on every new bug.
+
+## 3. One script does everything
+
+`scripts/drive.py` fetches the issue, builds the prompt, runs the agent, parses the verdict, saves artifacts. No multi-phase orchestration pipeline needed.

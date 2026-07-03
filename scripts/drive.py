@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-browser-use bug reproduction driver.
+bug reproduction driver — works on ANY GitHub issue.
 
-Single script handles all issues via browser-use agent + Claude Sonnet 4.
-Usage: python scripts/drive.py --issue 9329
+Fetches the issue via `gh`, builds a task prompt from the issue body,
+runs browser-use agent, and parses the agent's structured verdict line.
+
+Usage:
+    python scripts/drive.py --issue 9329
+    python scripts/drive.py --issue 9329 --repo makeplane/plane
+    python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
 """
 import asyncio
 import argparse
 import json
 import base64
 import os
+import re
+import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -28,102 +35,126 @@ PLANE_PASSWORD = os.getenv("PLANE_PASSWORD", "qweQWE123!@#")
 PLANE_WORKSPACE = os.getenv("PLANE_WORKSPACE", "plane-dev")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MODEL = os.getenv("BROWSER_USE_MODEL", "anthropic/claude-sonnet-4")
+DEFAULT_REPO = os.getenv("GITHUB_REPO", "makeplane/plane")
 
-LONG_TITLE = "A" * 256
 
-# ── Issue-specific task prompts ───────────────────────────────
+# ── Issue fetching ────────────────────────────────────────────
 
-ISSUE_TASKS: dict[str, dict] = {
-    "9329": {
-        "title": "255+ char title shows generic error instead of descriptive",
-        "url": "https://github.com/makeplane/plane/issues/9329",
-        "bug_class": "form-validation",
-        "task": f"""You are a QA engineer reproducing a bug in Plane (project management app at {PLANE_URL}).
 
-BUG: When creating a work item with a title longer than 255 characters, the error
-message should say "Title should be less than 255 characters" but instead shows
-a generic "Some error occurred" toast.
+def fetch_issue(issue_number: str, repo: str) -> dict:
+    """Fetch issue title and body via `gh` CLI. Returns {number, title, body, url}."""
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "view", issue_number, "--repo", repo,
+             "--json", "title,body,url,number"],
+            capture_output=True, text=True, check=True, timeout=30,
+        )
+        data = json.loads(result.stdout)
+        return {
+            "number": str(data["number"]),
+            "title": data["title"],
+            "body": data.get("body", "") or "",
+            "url": data["url"],
+        }
+    except FileNotFoundError:
+        print("❌ `gh` CLI not found. Install: https://cli.github.com/")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Failed to fetch issue #{issue_number} from {repo}")
+        print(f"   {e.stderr.strip()}")
+        sys.exit(1)
 
-STEPS — follow these EXACTLY:
-1. You are on the Plane login page. Enter email "{PLANE_EMAIL}" and click Continue.
-2. Enter password "{PLANE_PASSWORD}" and click "Go to workspace".
-3. Wait for the dashboard to load. Navigate to the SEED project's Issues/Work Items page.
-   URL pattern: {PLANE_URL}/{PLANE_WORKSPACE}/projects/*/issues
-4. Click the "Add work item" button (or similar — might say "Add Item", "New Issue", etc).
-5. In the Title field, type exactly this 256-character string: {LONG_TITLE}
-6. Press Enter or click Create/Submit to save the work item.
-7. OBSERVE what happens. Look for any error message, toast notification, or validation text.
 
-REPORT your findings:
-- What is the EXACT error message text you see?
-- Is it DESCRIPTIVE (mentions "255 characters" or character limit)?
-- Or is it GENERIC (says "Some error occurred" or similar vague text)?
-- Or did it succeed with NO error?
+# ── Prompt template ───────────────────────────────────────────
 
-Be precise about the exact error text you observe.""",
-    },
+TASK_TEMPLATE = """You are a QA engineer reproducing a bug in Plane (project management app).
 
-    "9050": {
-        "title": "Deleted stickies reappear after page reload",
-        "url": "https://github.com/makeplane/plane/issues/9050",
-        "bug_class": "state-persistence",
-        "task": f"""You are a QA engineer reproducing a bug in Plane (project management app at {PLANE_URL}).
+## App details
+- URL: {plane_url}
+- Login: email "{email}", password "{password}"
+- Workspace: {workspace}
 
-BUG: When you delete a sticky note and reload the page, the deleted sticky reappears.
+## Bug report (GitHub issue #{number})
+Title: {title}
+URL: {url}
 
-STEPS — follow these EXACTLY:
-1. You are on the Plane login page. Enter email "{PLANE_EMAIL}" and click Continue.
-2. Enter password "{PLANE_PASSWORD}" and click "Go to workspace".
-3. Wait for the dashboard to load.
-4. Navigate to the Stickies section. Look for "Stickies" in the sidebar or navigate to
-   {PLANE_URL}/{PLANE_WORKSPACE}/stickies
-5. Create a NEW sticky note with this UNIQUE text: "REPRO-9050-DELETE-TEST"
-6. Verify the sticky was created and is visible.
-7. DELETE that sticky (right-click → delete, or find the delete option).
-8. Verify the sticky is GONE from the page.
-9. RELOAD the page (press F5 or navigate away and back).
-10. Check: Is the deleted sticky "REPRO-9050-DELETE-TEST" still gone, or did it reappear?
+{body}
 
-REPORT your findings:
-- Did the sticky reappear after reload? (BUG REPRODUCED)
-- Or did it stay deleted? (BUG NOT REPRODUCED)
-- Include what you see on the stickies page after reload.""",
-    },
+## Your job
+1. Log in to Plane at {plane_url}.
+2. Read the bug report above. Figure out what steps reproduce it.
+3. Execute those steps in the browser.
+4. Observe what actually happens vs what the bug report says should happen.
 
-    "9124": {
-        "title": "Sub-task expand requires 3 clicks instead of 1",
-        "url": "https://github.com/makeplane/plane/issues/9124",
-        "bug_class": "ui-interaction",
-        "task": f"""You are a QA engineer reproducing a bug in Plane (project management app at {PLANE_URL}).
+## Rules
+- You are a REPRODUCER, not a fixer. You observe and report.
+- Explore the app to find the right place. Don't give up if the first path doesn't work.
+- Take screenshots at key moments, especially when you see the bug (or don't).
+- If the bug report mentions specific data (long text, special characters, etc), create or use that exact data.
 
-BUG: Expanding a sub-task in the issue list requires 3 clicks on the expand arrow
-instead of 1 click. The first two clicks do nothing visible.
+## Required output format
+End your final message with EXACTLY one of these verdict lines:
 
-STEPS — follow these EXACTLY:
-1. You are on the Plane login page. Enter email "{PLANE_EMAIL}" and click Continue.
-2. Enter password "{PLANE_PASSWORD}" and click "Go to workspace".
-3. Wait for the dashboard to load.
-4. Navigate to the SEED project's Issues/Work Items page.
-   URL pattern: {PLANE_URL}/{PLANE_WORKSPACE}/projects/*/issues
-5. Find a work item/issue that HAS sub-tasks (look for expand arrows or child indicators).
-6. Click the expand/collapse arrow ONCE. Did the sub-tasks appear?
-7. If not, click again. Did they appear on the second click?
-8. If not, click a third time. Did they appear on the third click?
+VERDICT: REPRODUCED | <one-line summary of what you saw>
+VERDICT: NOT_REPRODUCED | <one-line summary — the feature worked correctly>
+VERDICT: INCONCLUSIVE | <one-line summary — why you couldn't determine>
 
-REPORT your findings:
-- How many clicks did it take to expand the sub-tasks? (1, 2, or 3)
-- If it took more than 1 click, describe what happened on each click.
-- If there are no sub-tasks visible, say so.""",
-    },
+The verdict line must start with "VERDICT:" and use one of the three values above.
+Include a pipe separator and a brief description after it."""
+
+
+def build_task(issue: dict) -> str:
+    """Build the agent task prompt from a fetched issue."""
+    return TASK_TEMPLATE.format(
+        plane_url=PLANE_URL,
+        email=PLANE_EMAIL,
+        password=PLANE_PASSWORD,
+        workspace=PLANE_WORKSPACE,
+        number=issue["number"],
+        title=issue["title"],
+        url=issue["url"],
+        body=issue["body"],
+    )
+
+
+# ── Verdict parsing ──────────────────────────────────────────
+
+VERDICT_PATTERN = re.compile(
+    r"VERDICT:\s*(REPRODUCED|NOT_REPRODUCED|INCONCLUSIVE)\s*\|\s*(.+)",
+    re.IGNORECASE,
+)
+
+VERDICT_DISPLAY = {
+    "reproduced": "✅ REPRODUCED",
+    "not_reproduced": "❌ NOT REPRODUCED",
+    "inconclusive": "⚠️ INCONCLUSIVE",
 }
+
+
+def parse_verdict(result_text: str) -> tuple[str, str, str]:
+    """Parse the agent's structured verdict line.
+
+    Returns (status_display, verdict_key, summary).
+    Falls back to INCONCLUSIVE if no verdict line found.
+    """
+    for line in reversed(result_text.strip().splitlines()):
+        m = VERDICT_PATTERN.match(line.strip())
+        if m:
+            key = m.group(1).lower()
+            summary = m.group(2).strip()
+            return VERDICT_DISPLAY.get(key, "⚠️ INCONCLUSIVE"), key, summary
+
+    return "⚠️ INCONCLUSIVE", "inconclusive", "Agent did not emit a structured verdict line"
+
 
 # ── Artifact saving ───────────────────────────────────────────
 
 
-def save_artifacts(history: AgentHistoryList, issue_id: str, repro_dir: Path, issue: dict) -> None:
+def save_artifacts(history: AgentHistoryList, issue: dict, repro_dir: Path) -> None:
     """Extract and save all reproduction artifacts from browser-use history."""
+    issue_id = issue["number"]
 
-    # 1. Action log — step-by-step trace
+    # 1. Action log
     action_log = []
     for i, step in enumerate(history.history):
         entry: dict = {
@@ -149,146 +180,40 @@ def save_artifacts(history: AgentHistoryList, issue_id: str, repro_dir: Path, is
         else:
             entry["results"] = []
 
-        if step.state:
-            entry["url"] = getattr(step.state, "url", "")
-        else:
-            entry["url"] = ""
-
+        entry["url"] = getattr(step.state, "url", "") if step.state else ""
         action_log.append(entry)
 
     (repro_dir / "action-log.json").write_text(json.dumps(action_log, indent=2))
-    print(f"  📁 Action log: {len(action_log)} steps → {repro_dir}/action-log.json")
+    print(f"  📁 Action log: {len(action_log)} steps")
 
-    # 2. Screenshots — save each step's screenshot as PNG
+    # 2. Screenshots
     screenshots = history.screenshots()
-    saved_count = 0
+    saved = 0
     for i, b64 in enumerate(screenshots):
         if b64:
-            path = repro_dir / f"evidence-{i:02d}.png"
-            path.write_bytes(base64.b64decode(b64))
-            saved_count += 1
-    print(f"  📸 Screenshots: {saved_count} saved to {repro_dir}/evidence-*.png")
+            (repro_dir / f"evidence-{i:02d}.png").write_bytes(base64.b64decode(b64))
+            saved += 1
+    print(f"  📸 Screenshots: {saved}")
 
-    # 3. Full trace — browser-use native format
+    # 3. Full trace
     traces_dir = repro_dir / "traces"
     traces_dir.mkdir(exist_ok=True)
     try:
         history.save_to_file(str(traces_dir / "full-trace.json"))
-        print(f"  📁 Full trace → {traces_dir}/full-trace.json")
+        print("  📁 Full trace saved")
     except Exception as e:
         print(f"  ⚠️ Could not save full trace: {e}")
 
     # 4. Verdict
     result_text = history.final_result() or ""
-    verdict_md = generate_verdict(issue_id, issue, result_text, history)
-    (repro_dir / "verdict.md").write_text(verdict_md)
-    print(f"  📄 Verdict → {repro_dir}/verdict.md")
+    status, verdict_key, summary = parse_verdict(result_text)
 
-
-def generate_verdict(issue_id: str, issue: dict, result_text: str, history: AgentHistoryList) -> str:
-    """Generate verdict.md from agent's final result."""
-    result_lower = result_text.lower()
-
-    # Issue-specific verdict logic
-    # IMPORTANT: Match against the agent's CONCLUSION, not quotes from the bug report.
-    # The agent text often contains the bug description as context (e.g. "Some error occurred"
-    # as a quote), so naive keyword matching causes false positives.
-
-    if issue_id == "9329":
-        # Check for NOT REPRODUCED first (agent says bug behavior was NOT observed)
-        not_repro_signals = [
-            "does not appear" in result_lower,
-            "not present" in result_lower,
-            "bug not reproduced" in result_lower,
-            "correct behavior" in result_lower,
-            "correctly showing" in result_lower,
-            ("descriptive" in result_lower and "not generic" in result_lower),
-        ]
-        repro_signals = [
-            "generic error" in result_lower and "descriptive" not in result_lower,
-            "bug is reproduced" in result_lower,
-            "bug reproduced" in result_lower and "not" not in result_lower.split("reproduced")[0][-10:],
-        ]
-        if any(not_repro_signals):
-            status = "❌ NOT REPRODUCED"
-            reproduced = False
-            confidence = "high"
-        elif any(repro_signals):
-            status = "✅ REPRODUCED"
-            reproduced = True
-            confidence = "high"
-        else:
-            status = "⚠️ INCONCLUSIVE"
-            reproduced = False
-            confidence = "low"
-
-    elif issue_id == "9050":
-        not_repro_signals = [
-            "stayed deleted" in result_lower,
-            "did not reappear" in result_lower,
-            "still gone" in result_lower,
-            "bug not reproduced" in result_lower,
-            "not reproduced" in result_lower,
-        ]
-        repro_signals = [
-            "reappear" in result_lower and "did not reappear" not in result_lower,
-            "came back" in result_lower,
-            "still there" in result_lower,
-            "bug reproduced" in result_lower,
-        ]
-        if any(not_repro_signals):
-            status = "❌ NOT REPRODUCED"
-            reproduced = False
-            confidence = "high"
-        elif any(repro_signals):
-            status = "✅ REPRODUCED"
-            reproduced = True
-            confidence = "high"
-        else:
-            status = "⚠️ INCONCLUSIVE"
-            reproduced = False
-            confidence = "low"
-
-    elif issue_id == "9124":
-        not_repro_signals = [
-            "1 click" in result_lower,
-            "one click" in result_lower,
-            "single click" in result_lower,
-            "first click" in result_lower and "did not" not in result_lower,
-            "expanded on the first" in result_lower,
-        ]
-        repro_signals = [
-            "3 click" in result_lower,
-            "three click" in result_lower,
-            "took 3" in result_lower,
-            "required 3" in result_lower,
-            "third click" in result_lower and "expanded" in result_lower,
-        ]
-        if any(not_repro_signals):
-            status = "❌ NOT REPRODUCED"
-            reproduced = False
-            confidence = "high"
-        elif any(repro_signals):
-            status = "✅ REPRODUCED"
-            reproduced = True
-            confidence = "high"
-        else:
-            status = "⚠️ INCONCLUSIVE"
-            reproduced = False
-            confidence = "low"
-
-    else:
-        status = "⚠️ INCONCLUSIVE"
-        reproduced = False
-        confidence = "low"
-
-    return f"""# Reproduction Verdict — #{issue_id}
+    verdict_md = f"""# Reproduction Verdict — #{issue_id}
 
 **Status:** {status}
-**Confidence:** {confidence}
+**Summary:** {summary}
 **Issue:** [{issue["title"]}]({issue["url"]})
-**Bug class:** {issue["bug_class"]}
-**Tool:** browser-use (Python) + Claude Sonnet 4 via OpenRouter
+**Tool:** browser-use + {MODEL} via OpenRouter
 **Date:** {datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 ## Agent Result
@@ -308,24 +233,16 @@ def generate_verdict(issue_id: str, issue: dict, result_text: str, history: Agen
 - Action log: `action-log.json`
 - Full trace: `traces/full-trace.json`
 - Agent GIF: `agent-run.gif`
-
-## Identity
-
-This agent is a **reproducer**, not a fixer.
-Allowed verdicts: REPRODUCED / NOT REPRODUCED / INCONCLUSIVE
 """
+    (repro_dir / "verdict.md").write_text(verdict_md)
+    print(f"  📄 Verdict: {status} — {summary}")
 
 
 # ── Main ──────────────────────────────────────────────────────
 
 
-async def run(issue_id: str) -> None:
-    """Run browser-use agent to reproduce a bug."""
-    if issue_id not in ISSUE_TASKS:
-        print(f"❌ Unknown issue: {issue_id}")
-        print(f"   Available: {', '.join(ISSUE_TASKS.keys())}")
-        sys.exit(1)
-
+async def run(issue_number: str, repo: str) -> None:
+    """Fetch issue, build prompt, run agent, save artifacts."""
     if not CDP_URL:
         print("❌ Set CDP_URL in .env (e.g. ws://localhost:9222/devtools/browser/...)")
         sys.exit(1)
@@ -334,15 +251,23 @@ async def run(issue_id: str) -> None:
         print("❌ Set OPENROUTER_API_KEY in .env")
         sys.exit(1)
 
-    issue = ISSUE_TASKS[issue_id]
-    repro_dir = Path(f"reproductions/{issue_id}")
+    # ── Fetch issue ───────────────────────────────────────────
+    print(f"── Fetching issue #{issue_number} from {repo} ──")
+    issue = fetch_issue(issue_number, repo)
+    task = build_task(issue)
+
+    repro_dir = Path(f"reproductions/{issue['number']}")
     repro_dir.mkdir(parents=True, exist_ok=True)
     (repro_dir / "traces").mkdir(exist_ok=True)
+
+    # Save the issue body for reference
+    (repro_dir / "issue.json").write_text(json.dumps(issue, indent=2))
 
     print("╔══════════════════════════════════════════════════════╗")
     print("║  DRIVE — browser-use bug reproduction               ║")
     print("╚══════════════════════════════════════════════════════╝")
-    print(f"  issue    : #{issue_id} — {issue['title']}")
+    print(f"  issue    : #{issue['number']} — {issue['title']}")
+    print(f"  repo     : {repo}")
     print(f"  model    : {MODEL}")
     print(f"  cdp      : {CDP_URL}")
     print(f"  plane    : {PLANE_URL}")
@@ -359,7 +284,7 @@ async def run(issue_id: str) -> None:
     )
     browser = Browser(browser_profile=profile)
 
-    # ── Configure LLM — Claude via OpenRouter ─────────────────
+    # ── Configure LLM ─────────────────────────────────────────
     llm = ChatOpenAI(
         model=MODEL,
         base_url="https://openrouter.ai/api/v1",
@@ -371,19 +296,17 @@ async def run(issue_id: str) -> None:
         },
     )
 
-    # ── Create and run agent ──────────────────────────────────
+    # ── Run agent ─────────────────────────────────────────────
     print("── Starting browser-use agent ──")
 
     agent = Agent(
-        task=issue["task"],
+        task=task,
         llm=llm,
         browser=browser,
         use_vision=True,
         generate_gif=str(repro_dir / "agent-run.gif"),
         save_conversation_path=str(repro_dir / "conversation.json"),
-        sensitive_data={
-            "x_password": PLANE_PASSWORD,
-        },
+        sensitive_data={"x_password": PLANE_PASSWORD},
         max_failures=5,
         max_actions_per_step=5,
     )
@@ -394,7 +317,6 @@ async def run(issue_id: str) -> None:
         print(f"\n💀 Agent run failed: {e}")
         raise
     finally:
-        # Always try to close browser session
         try:
             await browser.close()
         except Exception:
@@ -402,16 +324,17 @@ async def run(issue_id: str) -> None:
 
     # ── Save artifacts ────────────────────────────────────────
     print("\n── Saving artifacts ──")
-    save_artifacts(history, issue_id, repro_dir, issue)
+    save_artifacts(history, issue, repro_dir)
 
     # ── Summary ───────────────────────────────────────────────
     result = history.final_result() or "(no result)"
+    status, _, summary = parse_verdict(result)
     print(f"\n{'═' * 54}")
-    print(f"  Issue     : #{issue_id}")
+    print(f"  Issue     : #{issue['number']} — {issue['title']}")
     print(f"  Steps     : {history.number_of_steps()}")
     print(f"  Duration  : {history.total_duration_seconds():.1f}s")
-    print(f"  Successful: {history.is_successful()}")
-    print(f"  Result    : {result[:200]}")
+    print(f"  Verdict   : {status}")
+    print(f"  Summary   : {summary}")
     print(f"  Artifacts : {repro_dir}/")
     print(f"{'═' * 54}")
     print("\n✅ DRIVE COMPLETE")
@@ -419,14 +342,33 @@ async def run(issue_id: str) -> None:
 
 def cli():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="browser-use bug reproduction driver")
+    parser = argparse.ArgumentParser(
+        description="Reproduce any GitHub issue in a running Plane instance",
+        epilog="Examples:\n"
+               "  python scripts/drive.py --issue 9329\n"
+               "  python scripts/drive.py --issue 9329 --repo makeplane/plane\n"
+               "  python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--issue", help="Issue number (uses --repo for the repository)")
+    group.add_argument("--url", help="Full GitHub issue URL")
     parser.add_argument(
-        "--issue",
-        required=True,
-        help="Issue number to reproduce (e.g. 9329, 9050, 9124)",
+        "--repo", default=DEFAULT_REPO,
+        help=f"GitHub repo (default: {DEFAULT_REPO})",
     )
     args = parser.parse_args()
-    asyncio.run(run(args.issue))
+
+    if args.url:
+        m = re.match(r"https?://github\.com/([^/]+/[^/]+)/issues/(\d+)", args.url)
+        if not m:
+            print(f"❌ Invalid GitHub issue URL: {args.url}")
+            sys.exit(1)
+        repo, issue_number = m.group(1), m.group(2)
+    else:
+        repo, issue_number = args.repo, args.issue
+
+    asyncio.run(run(issue_number, repo))
 
 
 if __name__ == "__main__":
