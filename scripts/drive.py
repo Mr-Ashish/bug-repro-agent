@@ -403,6 +403,25 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
     )
     browser = Browser(browser_profile=profile)
 
+    # ── Maximize browser window via CDP ───────────────────────
+    try:
+        import websockets, json as _json
+        async with websockets.connect(cdp_url) as ws:
+            # Get the current window bounds
+            await ws.send(_json.dumps({"id": 1, "method": "Browser.getWindowForTarget"}))
+            resp = _json.loads(await ws.recv())
+            window_id = resp.get("result", {}).get("windowId")
+            if window_id:
+                await ws.send(_json.dumps({
+                    "id": 2,
+                    "method": "Browser.setWindowBounds",
+                    "params": {"windowId": window_id, "bounds": {"windowState": "maximized"}}
+                }))
+                await ws.recv()
+                print("🖥️  Chrome window maximized")
+    except Exception as e:
+        print(f"⚠️  Could not maximize Chrome window: {e}")
+
     # ── Configure LLM ─────────────────────────────────────────
     llm = ChatOpenAI(
         model=MODEL,
