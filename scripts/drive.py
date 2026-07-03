@@ -158,7 +158,7 @@ TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 {url}
 
 {body}
-
+{context_section}
 ## Principles
 - **You are a reproducer, not a fixer.** Execute the steps, observe, report.
 - **Navigate by URL when possible.** Plane URLs follow: `{plane_url}/{workspace}/projects/<project-id>/settings/states/`. Use the address bar instead of hunting through menus.
@@ -175,8 +175,23 @@ VERDICT: NOT_REPRODUCED | <the feature worked correctly>
 VERDICT: INCONCLUSIVE | <why you couldn't determine>"""
 
 
-def build_task(issue: dict) -> str:
-    """Build the agent task prompt from a fetched issue."""
+def build_task(issue: dict, context: str = "") -> str:
+    """Build the agent task prompt from a fetched issue.
+
+    Args:
+        issue: Fetched GitHub issue dict (number, title, url, body).
+        context: Optional source-code context from the meta-agent.
+                 URL patterns, component names, selectors, etc.
+    """
+    # Only render the context section if the meta-agent provided something
+    if context.strip():
+        context_section = (
+            "\n## Source-code context (from meta-agent)\n"
+            f"{context.strip()}\n"
+        )
+    else:
+        context_section = ""
+
     return TASK_TEMPLATE.format(
         plane_url=PLANE_URL,
         email=PLANE_EMAIL,
@@ -186,6 +201,7 @@ def build_task(issue: dict) -> str:
         title=issue["title"],
         url=issue["url"],
         body=issue["body"],
+        context_section=context_section,
     )
 
 
@@ -399,8 +415,12 @@ def post_github_comment(issue: dict, repo: str, repro_dir: Path) -> bool:
 # ── Main ──────────────────────────────────────────────────────
 
 
-async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: int = 300, post: bool = False) -> str:
+async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: int = 300, post: bool = False, context: str = "") -> str:
     """Fetch issue, build prompt, run agent, save artifacts, optionally post to GitHub.
+
+    Args:
+        context: Source-code context from the meta-agent (URL patterns, component info).
+                 Can be a raw string or a path to a file containing the context.
 
     Returns verdict key: 'reproduced', 'not_reproduced', or 'inconclusive'.
     """
@@ -421,7 +441,16 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
     # ── Fetch issue ───────────────────────────────────────────
     print(f"\n── Fetching issue #{issue_number} from {repo} ──")
     issue = fetch_issue(issue_number, repo)
-    task = build_task(issue)
+
+    # ── Resolve context (string or file path) ────────────────
+    resolved_context = context
+    if context and Path(context).is_file():
+        resolved_context = Path(context).read_text().strip()
+        print(f"   📄 Loaded context from {context}")
+    elif context:
+        print(f"   📄 Using inline context ({len(context)} chars)")
+
+    task = build_task(issue, context=resolved_context)
 
     repro_dir = Path(f"reproductions/{issue['number']}")
     repro_dir.mkdir(parents=True, exist_ok=True)
@@ -625,6 +654,13 @@ def cli():
         "--post", action="store_true",
         help="Post verdict as a comment on the GitHub issue",
     )
+    parser.add_argument(
+        "--context",
+        default="",
+        help="Source-code context for the browser agent. "
+             "Either a string or a path to a file. "
+             "Example: --context 'States URL: /<workspace>/settings/projects/<id>/states/'",
+    )
     args = parser.parse_args()
 
     if args.url:
@@ -636,7 +672,7 @@ def cli():
     else:
         repo, issue_number = args.repo, args.issue
 
-    verdict = asyncio.run(run(issue_number, repo, dry_run=args.dry_run, timeout=args.timeout, post=args.post))
+    verdict = asyncio.run(run(issue_number, repo, dry_run=args.dry_run, timeout=args.timeout, post=args.post, context=args.context))
     sys.exit(VERDICT_EXIT_CODES.get(verdict, EXIT_ERROR))
 
 

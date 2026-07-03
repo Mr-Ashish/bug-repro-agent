@@ -61,16 +61,46 @@ If something is broken beyond that, it's a human problem.
 
 ## Guiding the browser agent with Plane source code
 
-Before running drive.py, you can improve the agent's success rate by reading Plane's source code to find relevant URL patterns and UI structure.
+Before running drive.py, read Plane's source code to discover context that helps the browser agent navigate faster. **Then pass it via `--context`.**
 
 **Important:** Plane's web app is at `plane/apps/web/`, NOT `plane/web/`. Always use the `apps/` prefix.
+
+### Step 1: Discover context from Plane source
 
 ```bash
 # Find URL routes for the feature mentioned in the bug
 find plane/apps/web/app -type d -name "states" 2>/dev/null
 grep -r "states" plane/apps/web/app/ --include="*.tsx" -l | head -10
+
+# Find component names, selectors, data-testid attributes
+grep -r "data-testid" plane/apps/web/app/ --include="*.tsx" | head -10
 ```
-This helps you understand where in the app the bug lives, so you can provide better context in the task prompt or verify the agent navigated to the right place.
+
+### Step 2: Pass context to the browser agent
+
+Use `--context` to inject your discoveries into the browser agent's prompt:
+
+```bash
+# Inline context string
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
+  --context "States settings URL: /plane-dev/projects/<project-id>/settings/states/
+The delete button is inside a ⋯ dropdown on each state row.
+Component: plane/apps/web/app/.../settings/states/page.tsx
+The state list uses ProjectStateRoot component."
+
+# Or write context to a file first, then pass the path
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
+  --context reproductions/9329/context.txt
+```
+
+### What to include in context
+
+Good context = fewer wasted browser steps. Focus on:
+- **URL patterns**: Direct URLs the agent can navigate to
+- **UI structure**: Where buttons/menus/dropdowns live
+- **Component names**: Helps the agent identify the right part of the page
+- **Data attributes**: `data-testid` values the agent can target
+- **API endpoints**: Relevant REST endpoints the feature uses
 
 ## What it does
 
@@ -83,6 +113,10 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
 
 # Full E2E (reproduce + Playwright test + post verdict to GitHub issue)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
+
+# Full E2E with source-code context (best results)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
+  --context "States URL: /plane-dev/projects/<id>/settings/states/"
 
 # Other options
 python scripts/drive.py --issue 9329 --dry-run          # prompt only, no agent run
