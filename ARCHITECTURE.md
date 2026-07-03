@@ -1,5 +1,33 @@
 # Architecture — Bug Reproduction Agent
 
+> **Hackathon:** Browser-Use Hackathon, July 4 2026, Bengaluru
+> **Target app:** [Plane](https://github.com/makeplane/plane) — open-source project management
+> **One-liner:** Given a GitHub issue URL, autonomously reproduces the bug in a running local Plane instance using browser-use (Python), and emits evidence artifacts + a structured verdict.
+
+---
+
+## Design Principles
+
+1. **The issue IS the plan.** Fetch the issue body, inject it into a generic prompt, let the LLM figure out the steps. No hardcoded reproduction logic.
+2. **Structured verdict, not keyword matching.** Agent ends with `VERDICT: REPRODUCED | <summary>`. Parsed by one regex. No per-issue matchers.
+3. **One script does everything.** `drive.py` fetches, prompts, runs, parses, saves. No multi-phase pipeline.
+
+---
+
+## Identity — Reproducer, NOT Fixer
+
+This agent **reproduces** bugs. It does not fix, patch, or resolve them.
+
+| Verdict | Meaning |
+|---------|---------|
+| **REPRODUCED** | The reported bug behavior was observed |
+| **NOT REPRODUCED** | The reported bug behavior was NOT observed — feature worked correctly |
+| **INCONCLUSIVE** | Evidence was ambiguous; cannot confirm or deny the bug |
+
+**Never use:** "FIXED", "RESOLVED", "PATCHED", or any language implying the agent repaired anything.
+
+---
+
 ## System Layers
 
 ```
@@ -150,7 +178,7 @@ sequenceDiagram
 
 ---
 
-## What Each Layer Owns
+## Layer Ownership
 
 | Concern | Grok | drive.py | browser-use Agent | post_comment.py |
 |---------|:-----:|:--------:|:-----------------:|:---------------:|
@@ -178,20 +206,113 @@ sequenceDiagram
 
 ---
 
-## Key Insight
+## Exit Conditions
 
-**Grok never touches the bug.** It's a pure orchestrator:
-- Reads SKILL.md to know what's possible
-- Translates human intent into script invocations
-- Interprets exit codes to understand outcomes
-- Chains scripts (drive → post_comment)
-- Can adjust parameters (--timeout, --dry-run) based on context
+| Condition | What happens |
+|-----------|-------------|
+| ✅ Agent emits `VERDICT: REPRODUCED` | Artifacts saved, exit code 0 |
+| ❌ Agent emits `NOT_REPRODUCED` | Artifacts saved, exit code 1 |
+| ⚠️ Agent emits `INCONCLUSIVE` | Artifacts saved, exit code 2 |
+| 🚨 Agent crash / Plane crash | Partial artifacts + error.txt saved, exit code 3 |
+| ⏰ Timeout (default 300s) | Partial artifacts + error.txt saved, exit code 3 |
+| 📊 50 steps exhausted | Agent must conclude with whatever evidence it has |
 
-**drive.py never reasons about the bug.** It's infrastructure:
-- Fetches the issue, builds the prompt, manages the agent lifecycle
-- Saves everything to disk even on crash
-- Parses the structured verdict line mechanically
+---
 
-**The browser-use Agent is the only intelligence** that reads the bug report,
-figures out what steps to take, drives the browser, observes the behavior,
-and decides whether the bug was reproduced.
+## browser-use Integration
+
+| Property | Value |
+|----------|-------|
+| Library | `browser-use` (Python, `pip install browser-use`) |
+| Model | Claude Sonnet 4 via OpenRouter (`ChatOpenAI` with OpenRouter base_url) |
+| Connection | CDP to existing Chrome (auto-discovered from port 9222) |
+| Driver | `scripts/drive.py --issue <N>` or `--url <github-url>` |
+| Operations | Single `Agent(task=..., llm=...).run()` — agent handles all navigation/actions |
+| Built-in | Screenshots, GIF generation, conversation saving, video recording |
+| Traces | `history.save_to_file()` → `reproductions/<issue>/traces/full-trace.json` |
+
+---
+
+## Plane Knowledge
+
+Injected into the agent prompt by `drive.py`:
+
+| Knowledge | Value |
+|-----------|-------|
+| Base URL | `http://localhost:3000` |
+| Login | `admin@admin.com` / `qweQWE123!@#` |
+| Workspace | `plane-dev` |
+| Project | SEED (Seed Demo Project) |
+| Nav pattern | `/plane-dev/projects/<id>/issues/` |
+| Auth flow | Email + password login page |
+| Existing data | 30 issues, 5 states, 3 cycles, 4 modules, 5 pages, sub-issues |
+
+---
+
+## Demo Bugs (Hackathon Examples)
+
+Works on any Plane issue. These are good demos — visual and fast:
+
+| # | Bug | Bug Class |
+|---|-----|-----------|
+| **9329** | 255+ char title shows generic error | form-validation |
+| **9050** | Deleted stickies reappear on reload | state-persistence |
+| **9124** | Sub-task expand requires 3 clicks | ui-interaction |
+
+---
+
+## File Structure
+
+```
+bug-repro-agent/
+├── scripts/
+│   ├── __init__.py                   ← makes scripts/ importable
+│   ├── drive.py                      ← main reproduction agent (~520 lines)
+│   └── post_comment.py               ← generates + posts GitHub comment
+├── .claude/skills/repro-agent/
+│   └── SKILL.md                      ← skill definition
+├── reproductions/                    ← output directory (populated per-run)
+│   └── <issue-number>/
+│       ├── issue.json
+│       ├── task-prompt.txt
+│       ├── action-log.json
+│       ├── evidence-*.png
+│       ├── agent-run.gif
+│       ├── conversation.json
+│       ├── verdict.md
+│       ├── error.txt                 ← written on crash/timeout
+│       ├── github-comment.md         ← generated by post_comment.py
+│       └── traces/full-trace.json
+├── .env.example                      ← config template
+├── requirements.txt                  ← Python deps
+├── pyproject.toml                    ← Python project config
+├── ARCHITECTURE.md                   ← this file
+├── README.md
+└── plane/                            ← Plane clone (gitignored)
+```
+
+---
+
+## Demo Structure (Hackathon Stage)
+
+**Three beats, ~4 min total:**
+
+| Beat | Goal | Key moment |
+|------|------|-----------|
+| **Live reproduction** (~2 min) | Run `drive.py --issue 9329` live | Audience sees browser moving autonomously |
+| **Artifact inspection** (~1 min) | Show verdict.md, screenshots, action-log | Evidence the bug was found |
+| **GitHub report** (~30s) | Run `post_comment.py --issue 9329` | Agent posts rich report back to the issue |
+
+---
+
+## Terminology
+
+| Term | Definition |
+|------|-----------|
+| **repro-agent** | The system. |
+| **drive.py** | The main Python script — fetches issue, runs agent, saves artifacts. |
+| **post_comment.py** | Reads artifacts, builds Markdown comment, posts to GitHub issue. |
+| **browser-use** | Python library — resolves NL task → DOM actions via Playwright. In-process, no server. |
+| **Verdict** | `REPRODUCED`, `NOT_REPRODUCED`, or `INCONCLUSIVE`. Structured line parsed from agent output. |
+| **Artifact bundle** | All output: `issue.json`, `task-prompt.txt`, `action-log.json`, `evidence-*.png`, `verdict.md`, `agent-run.gif`, `conversation.json`, `traces/`, `error.txt`, `github-comment.md`. |
+| **Action log** | `action-log.json` — every agent step (thought, action, result, URL). |

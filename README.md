@@ -123,7 +123,7 @@ Allowed verdicts: `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
 
 **Prompt:** One generic template works for all issues. The issue body IS the reproduction plan — the LLM figures out the steps.
 
-See [HLD.md](./HLD.md) for full architecture and [DESIGN.md](./DESIGN.md) for the core principle.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system design, UML sequence diagram, and layer ownership.
 
 ## License
 
