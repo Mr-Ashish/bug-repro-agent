@@ -22,12 +22,15 @@ Given a GitHub issue URL → drives a real browser → reproduces the bug → ge
 
 ## How to reproduce a bug
 
-**Always follow the skill:** `.claude/skills/repro-agent/SKILL.md`
+Invoke the skill with a GitHub issue URL:
+```
+/repro-agent https://github.com/makeplane/plane/issues/<N>
+```
 
-The skill defines:
+The skill (`.claude/skills/repro-agent/SKILL.md`) handles everything:
 1. Pre-flight checklist (sync Plane, verify Chrome, seed data)
 2. Source code grepping to build `--context` for the browser agent
-3. Running `drive.py` with the right flags
+3. Running `drive.py --post` with the right flags
 4. Reviewing the generated Playwright test
 
 ## Constraints
