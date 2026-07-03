@@ -77,17 +77,14 @@ It fetches the issue, drives a browser to execute the reproduction steps, and sa
 ```
 python scripts/drive.py --issue 9329
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
-python scripts/drive.py --issue 9329 --dry-run       # prompt only, no agent run
-python scripts/drive.py --issue 9329 --timeout 600    # custom timeout
+python scripts/drive.py --issue 9329 --post            # reproduce AND post result to GitHub issue
+python scripts/drive.py --issue 9329 --dry-run          # prompt only, no agent run
+python scripts/drive.py --issue 9329 --timeout 600      # custom timeout
 ```
 
-The script handles everything: fetch the issue via `gh`, build the prompt, run the browser-use agent, parse the verdict, save artifacts.
+The script handles everything: fetch the issue via `gh`, build the prompt, run the browser-use agent, parse the verdict, save artifacts, and optionally post the result back to the GitHub issue as a comment.
 
-Post the reproduction report back to GitHub:
-```
-python scripts/post_comment.py --issue 9329
-python scripts/post_comment.py --issue 9329 --dry-run  # generate file only
-```
+**Always use `--post` for demo runs** so the verdict appears directly on the GitHub issue.
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
