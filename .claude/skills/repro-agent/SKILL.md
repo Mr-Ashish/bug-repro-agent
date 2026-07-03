@@ -67,10 +67,13 @@ Before running drive.py, read Plane's source code to discover context that helps
 
 ### Step 1: Discover context from Plane source
 
+Read the issue first, identify the feature area, then grep for relevant code:
+
 ```bash
 # Find URL routes for the feature mentioned in the bug
-find plane/apps/web/app -type d -name "states" 2>/dev/null
-grep -r "states" plane/apps/web/app/ --include="*.tsx" -l | head -10
+# Replace <feature> with the area from the issue (e.g., cycles, modules, pages, issues)
+find plane/apps/web/app -type d -name "<feature>" 2>/dev/null
+grep -r "<feature>" plane/apps/web/app/ --include="*.tsx" -l | head -10
 
 # Find component names, selectors, data-testid attributes
 grep -r "data-testid" plane/apps/web/app/ --include="*.tsx" | head -10
@@ -81,22 +84,21 @@ grep -r "data-testid" plane/apps/web/app/ --include="*.tsx" | head -10
 Use `--context` to inject your discoveries into the browser agent's prompt:
 
 ```bash
-# Inline context string
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
-  --context "States settings URL: /plane-dev/projects/<project-id>/settings/states/
-The delete button is inside a ⋯ dropdown on each state row.
-Component: plane/apps/web/app/.../settings/states/page.tsx
-The state list uses ProjectStateRoot component."
+# Inline context string (adapt to whatever the bug is about)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
+  --context "Feature URL: /plane-dev/projects/<project-id>/<feature-path>/
+Key UI element is behind a ⋯ dropdown.
+Component: plane/apps/web/app/.../<feature>/page.tsx"
 
 # Or write context to a file first, then pass the path
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
-  --context reproductions/9329/context.txt
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
+  --context reproductions/<N>/context.txt
 ```
 
 ### What to include in context
 
 Good context = fewer wasted browser steps. Focus on:
-- **URL patterns**: Direct URLs the agent can navigate to
+- **URL patterns**: Direct URLs the agent can navigate to (derived from the issue's feature area)
 - **UI structure**: Where buttons/menus/dropdowns live
 - **Component names**: Helps the agent identify the right part of the page
 - **Data attributes**: `data-testid` values the agent can target
@@ -109,29 +111,29 @@ The full pipeline: **fetch → reproduce → generate Playwright test → post t
 
 ```bash
 # Standard run (reproduce + generate Playwright test)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N>
 
 # Full E2E (reproduce + Playwright test + post verdict to GitHub issue)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post
 
-# Full E2E with source-code context (best results)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
-  --context "States URL: /plane-dev/projects/<id>/settings/states/"
+# Full E2E with source-code context (best results — adapt context to the bug's feature area)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
+  --context "Feature URL: /plane-dev/projects/<id>/<relevant-path>/"
 
 # Other options
-python scripts/drive.py --issue 9329 --dry-run          # prompt only, no agent run
-python scripts/drive.py --issue 9329 --timeout 600      # custom timeout
+python scripts/drive.py --issue <N> --dry-run          # prompt only, no agent run
+python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 ```
 
 **Always use `--post` for demo runs** so the verdict appears directly on the GitHub issue.
 
 After drive.py completes, review the generated Playwright test:
 ```bash
-# The test is auto-generated at reproductions/<issue>/test_<issue>.py
-cat reproductions/9329/test_9329.py
+# The test is auto-generated at reproductions/<N>/test_<N>.py
+cat reproductions/<N>/test_<N>.py
 
 # Run it (selectors may need refinement for full replay)
-pytest reproductions/9329/test_9329.py -v --headed
+pytest reproductions/<N>/test_<N>.py -v --headed
 ```
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.

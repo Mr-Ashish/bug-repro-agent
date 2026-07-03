@@ -223,13 +223,6 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
             elif in_steps and line.strip():
                 repro_steps += f"    {line}\n"
 
-    # Find settings/states URL if agent visited it
-    settings_url = ""
-    for u in urls:
-        if "settings" in u and "states" in u:
-            settings_url = u
-            break
-
     test_code = f'''"""
 Playwright regression test for: {issue_title}
 

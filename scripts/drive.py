@@ -161,9 +161,9 @@ TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 {context_section}
 ## Principles
 - **You are a reproducer, not a fixer.** Execute the steps, observe, report.
-- **Navigate by URL when possible.** Plane URLs follow: `{plane_url}/{workspace}/projects/<project-id>/settings/states/`. Use the address bar instead of hunting through menus.
+- **Navigate by URL when possible.** Plane URLs follow patterns like `{plane_url}/{workspace}/projects/<project-id>/issues/`, `.../settings/`, `.../cycles/`, `.../modules/`, `.../pages/`. Use the address bar instead of hunting through menus.
 - **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
-- **Use context menus.** Settings and destructive actions in Plane are behind ⋯ (three-dot) menus on project names, not in the main sidebar.
+- **Use context menus.** Settings and actions in Plane are often behind ⋯ (three-dot) menus, not always in the main sidebar.
 - **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed. Don't panic.
 - **Budget your steps.** You have limited actions. If the same approach fails twice, switch strategies.
 

@@ -239,7 +239,7 @@ SEED_ISSUES = [
         "priority": "medium",
     },
     {
-        "name": "A" * 256,  # Long title — useful for testing issue #9329
+        "name": "A" * 256,  # Long title — edge-case testing for truncation bugs
         "description_html": "<p>This issue has a very long title (256 chars) for edge-case testing.</p>",
         "priority": "high",
     },
