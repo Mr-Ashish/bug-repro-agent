@@ -30,7 +30,6 @@ This agent is a **bug reproducer**. It does not fix, patch, or resolve bugs. It 
 │  ═══════════════════════════                                │
 │                                                             │
 │  Grok Skill (.claude/skills/repro-agent/SKILL.md)           │
-│  Internally uses /loop for autonomous execution             │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │  python scripts/drive.py --issue <N>                  │  │
@@ -196,7 +195,6 @@ bug-repro-agent/
 ├── requirements.txt                  ← Python deps
 ├── pyproject.toml                    ← Python project config
 ├── DESIGN.md
-├── FEATURE-github-comment.md         ← GitHub comment feature spec
 ├── HLD.md                            ← this file
 ├── README.md
 └── plane/                            ← Plane clone (gitignored)
@@ -206,12 +204,13 @@ bug-repro-agent/
 
 ## Demo Structure (Hackathon Stage)
 
-**Two beats, ~3 min total:**
+**Three beats, ~4 min total:**
 
 | Beat | Goal | Key moment |
 |------|------|-----------|
 | **Live reproduction** (~2 min) | Run `drive.py --issue 9329` live | Audience sees browser moving autonomously |
 | **Artifact inspection** (~1 min) | Show verdict.md, screenshots, action-log | Evidence the bug was found |
+| **GitHub report** (~30s) | Run `post_comment.py --issue 9329` | Agent posts rich report back to the issue |
 
 ---
 
@@ -223,5 +222,5 @@ bug-repro-agent/
 | **drive.py** | The single Python script that does everything. |
 | **browser-use** | Python library — resolves NL task → DOM actions via built-in Playwright. In-process, no server. |
 | **Verdict** | `REPRODUCED`, `NOT_REPRODUCED`, or `INCONCLUSIVE`. Structured line parsed from agent output. |
-| **Artifact bundle** | The output: `issue.json` + `action-log.json` + `evidence-*.png` + `verdict.md` + `traces/`. |
+| **Artifact bundle** | The full output: `issue.json`, `task-prompt.txt`, `action-log.json`, `evidence-*.png`, `verdict.md`, `agent-run.gif`, `conversation.json`, `traces/`, `error.txt` (on crash), `github-comment.md` (from post_comment.py). |
 | **Action log** | `reproductions/<issue>/action-log.json` — every browser-use agent step (thought, action, result, URL). |

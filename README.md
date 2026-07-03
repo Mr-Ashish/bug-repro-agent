@@ -16,6 +16,7 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/5432
 3. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) to reproduce the bug
 4. **Parses** the agent's structured verdict: `VERDICT: REPRODUCED | <summary>`
 5. **Saves** evidence: screenshots, action log, GIF, video, full trace
+6. **Reports** (optional): posts a rich reproduction report back to the GitHub issue
 
 Works on **any** Plane issue — not just pre-selected ones.
 
@@ -36,13 +37,16 @@ Output: reproductions/<issue-number>/ (verdict, screenshots, traces)
 ```
 reproductions/9329/
 ├── issue.json               # fetched issue (title, body, URL)
+├── task-prompt.txt           # full prompt sent to agent
 ├── action-log.json          # every agent step (thought, actions, result)
 ├── evidence-*.png           # screenshots at each step
 ├── agent-run.gif            # animated GIF of browser session
 ├── conversation.json        # full LLM conversation
-├── traces/
-│   └── full-trace.json      # complete browser-use agent history
-└── verdict.md               # parsed verdict + agent result + run stats
+├── verdict.md               # parsed verdict + agent result + run stats
+├── error.txt                # error details (on crash/timeout)
+├── github-comment.md        # GitHub comment (from post_comment.py)
+└── traces/
+    └── full-trace.json      # complete browser-use agent history
 ```
 
 ## Prerequisites
@@ -57,8 +61,10 @@ reproductions/9329/
 
 ```bash
 pip install browser-use python-dotenv
-cp .env.example .env                 # add OPENROUTER_API_KEY + CDP_URL
+cp .env.example .env                 # add OPENROUTER_API_KEY
 ```
+
+> **Note:** CDP_URL is auto-discovered from Chrome on port 9222. You only need to set it manually if Chrome is on a different port.
 
 ## Usage
 
@@ -71,7 +77,32 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/9050
 
 # Specify a different repo
 python scripts/drive.py --issue 42 --repo someorg/somerepo
+
+# Dry run — generate prompt without running agent (saves API cost)
+python scripts/drive.py --issue 9329 --dry-run
+
+# Custom timeout (default: 300s)
+python scripts/drive.py --issue 9329 --timeout 600
 ```
+
+### Post reproduction report to GitHub
+
+```bash
+# After a successful drive run, post a comment to the issue
+python scripts/post_comment.py --issue 9329
+
+# Dry run — generate comment file without posting
+python scripts/post_comment.py --issue 9329 --dry-run
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Bug reproduced |
+| 1 | Bug not reproduced |
+| 2 | Inconclusive |
+| 3 | Error |
 
 ## Verdict protocol
 
