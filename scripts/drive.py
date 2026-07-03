@@ -31,7 +31,7 @@ load_dotenv()
 # ── Configuration ─────────────────────────────────────────────
 
 CDP_URL = os.getenv("CDP_URL", "")
-PLANE_URL = os.getenv("PLANE_URL", "http://localhost:3000")
+PLANE_URL = os.getenv("PLANE_URL", "http://localhost:80")
 PLANE_EMAIL = os.getenv("PLANE_EMAIL", "admin@admin.com")
 PLANE_PASSWORD = os.getenv("PLANE_PASSWORD", "qweQWE123!@#")
 PLANE_WORKSPACE = os.getenv("PLANE_WORKSPACE", "plane-dev")
@@ -551,6 +551,17 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
     if history and history.history:
         result = history.final_result() or "(no result)"
         status, verdict_key, summary = parse_verdict(result)
+
+        # ── Generate Playwright test ──────────────────────────
+        print("\n── Generating Playwright test ──")
+        try:
+            from generate_playwright import generate_test
+            test_code = generate_test(str(issue["number"]), repro_dir)
+            test_path = repro_dir / f"test_{issue['number']}.py"
+            test_path.write_text(test_code)
+            print(f"  🎭 Playwright test: {test_path}")
+        except Exception as e:
+            print(f"  ⚠️ Could not generate Playwright test: {e}")
 
         # ── Post to GitHub issue ──────────────────────────────
         if post:
