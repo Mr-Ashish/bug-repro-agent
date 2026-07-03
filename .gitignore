@@ -1,1 +1,6 @@
 plane/
+node_modules/
+dist/
+reproductions/
+.env
+*.log
