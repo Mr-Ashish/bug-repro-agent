@@ -406,19 +406,24 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
     # ── Maximize browser window via CDP ───────────────────────
     try:
         import websockets, json as _json
-        async with websockets.connect(cdp_url) as ws:
-            # Get the current window bounds
-            await ws.send(_json.dumps({"id": 1, "method": "Browser.getWindowForTarget"}))
-            resp = _json.loads(await ws.recv())
-            window_id = resp.get("result", {}).get("windowId")
-            if window_id:
-                await ws.send(_json.dumps({
-                    "id": 2,
-                    "method": "Browser.setWindowBounds",
-                    "params": {"windowId": window_id, "bounds": {"windowState": "maximized"}}
-                }))
-                await ws.recv()
-                print("🖥️  Chrome window maximized")
+        # Browser-level CDP lacks a target context; use a page-level target instead
+        targets = json.loads(urllib.request.urlopen(
+            cdp_url.replace("ws://", "http://").split("/devtools")[0] + "/json"
+        ).read())
+        page_ws = next((t["webSocketDebuggerUrl"] for t in targets if t["type"] == "page"), None)
+        if page_ws:
+            async with websockets.connect(page_ws) as ws:
+                await ws.send(_json.dumps({"id": 1, "method": "Browser.getWindowForTarget"}))
+                resp = _json.loads(await ws.recv())
+                window_id = resp.get("result", {}).get("windowId")
+                if window_id:
+                    await ws.send(_json.dumps({
+                        "id": 2,
+                        "method": "Browser.setWindowBounds",
+                        "params": {"windowId": window_id, "bounds": {"windowState": "maximized"}}
+                    }))
+                    await ws.recv()
+                    print("🖥️  Chrome window maximized")
     except Exception as e:
         print(f"⚠️  Could not maximize Chrome window: {e}")
 
