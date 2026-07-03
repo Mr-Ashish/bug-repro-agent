@@ -13,6 +13,7 @@
  */
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "fs";
+import { chromium } from "playwright-core";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
@@ -139,6 +140,19 @@ async function observe(instruction: string) {
   return json?.data?.result ?? [];
 }
 
+async function screenshot(label: string): Promise<string | null> {
+  const { json } = await tracedPost("screenshot", label, `/v1/sessions/${SESSION_ID}/screenshot`, {});
+  const b64 = json?.data?.screenshot || json?.data?.base64;
+  if (b64) {
+    const filename = `evidence-${String(stepN).padStart(2, "0")}-${label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.png`;
+    const filepath = `${REPRO_DIR}/${filename}`;
+    writeFileSync(filepath, Buffer.from(b64, "base64"));
+    console.log(`  📸 Saved ${filepath}`);
+    return filepath;
+  }
+  return null;
+}
+
 // ── MAIN ─────────────────────────────────────────────────────
 
 async function main() {
@@ -147,6 +161,23 @@ async function main() {
     process.exit(1);
   }
   mkdirSync(REPRO_DIR, { recursive: true });
+
+  // ── Video recording via Playwright CDP ─────────────────────
+  // Connect to the SAME browser Stagehand will use, record everything
+  console.log("── Video: connecting Playwright recorder to CDP ──");
+  let videoRecorder: { context: any; page: any } | null = null;
+  try {
+    const browser = await chromium.connectOverCDP(CDP_URL);
+    const context = await browser.newContext({
+      recordVideo: { dir: REPRO_DIR, size: { width: 1280, height: 720 } },
+    });
+    const page = await context.newPage();
+    await page.goto(PLANE_URL);
+    videoRecorder = { context, page };
+    console.log(`  🎬 Recording video to ${REPRO_DIR}/\n`);
+  } catch (e) {
+    console.warn(`  ⚠️ Video recording skipped (CDP connect failed): ${e}`);
+  }
 
   console.log("╔══════════════════════════════════════════════╗");
   console.log("║  DRIVE — Issue #9050: Sticky delete bug      ║");
@@ -174,6 +205,7 @@ async function main() {
 
   const loginCheck = await extract("What page am I on?");
   console.log(`  → ${loginCheck.text.slice(0, 80)}\n`);
+  await screenshot("after-login");
 
   // ── 2. Navigate to Stickies ────────────────────────────────
   console.log("── 2. Navigate to Stickies ──");
@@ -182,6 +214,7 @@ async function main() {
 
   const stickiesPage = await extract("What page am I on? Do I see a stickies section?");
   console.log(`  → ${stickiesPage.text.slice(0, 100)}\n`);
+  await screenshot("stickies-page");
 
   // ── 3. Create a sticky ─────────────────────────────────────
   console.log("── 3. Create a sticky ──");
@@ -198,6 +231,7 @@ async function main() {
   // Verify sticky was created
   const stickyCreated = await extract(`Can you see a sticky note containing the text "${STICKY_TEXT}"? List all sticky notes visible.`);
   console.log(`  → created: ${stickyCreated.text.slice(0, 120)}\n`);
+  await screenshot("after-create-sticky");
 
   // ── 4. Delete the sticky ───────────────────────────────────
   console.log("── 4. Delete the sticky ──");
@@ -216,6 +250,7 @@ async function main() {
   console.log("── 5. Verify sticky is gone after delete ──");
   const afterDelete = await extract(`Is the sticky note with text "${STICKY_TEXT}" still visible on the page? List all visible sticky notes.`);
   console.log(`  → after delete: ${afterDelete.text.slice(0, 150)}\n`);
+  await screenshot("after-delete-sticky");
 
   // ── 6. Reload the page ─────────────────────────────────────
   console.log("── 6. Reload the page ──");
@@ -226,6 +261,7 @@ async function main() {
   console.log("── 7. Check if deleted sticky reappeared ──");
   const afterReload = await extract(`After reloading the page, is the sticky note with text "${STICKY_TEXT}" visible? List all sticky notes you can see.`);
   console.log(`  → after reload: ${afterReload.text.slice(0, 200)}\n`);
+  await screenshot("after-reload");
 
   // ── 8. Verdict ─────────────────────────────────────────────
   console.log("── 8. Verdict ──");
@@ -266,10 +302,22 @@ ${verdict === "REPRODUCED"
   writeFileSync(`${REPRO_DIR}/verdict.md`, verdictMd);
 
   saveTraces();
+
+  // ── Close video recorder ───────────────────────────────────
+  if (videoRecorder) {
+    try {
+      await videoRecorder.page.close();
+      await videoRecorder.context.close();
+      console.log(`  🎬 Video saved to ${REPRO_DIR}/`);
+    } catch (e) {
+      console.warn(`  ⚠️ Video close failed: ${e}`);
+    }
+  }
+
   console.log("\n✅ DRIVE COMPLETE");
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error("\n💀 FATAL:", e);
   saveTraces();
   process.exit(1);

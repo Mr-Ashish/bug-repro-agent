@@ -12,5 +12,5 @@
     "declaration": true
   },
   "include": ["lib/**/*.ts", "scripts/**/*.ts"],
-  "exclude": ["node_modules", "dist", "plane", "reproductions"]
+  "exclude": ["node_modules", "dist", "plane", "reproductions", "scripts/archive"]
 }

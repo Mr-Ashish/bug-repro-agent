@@ -12,6 +12,7 @@
  */
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "fs";
+import { chromium } from "playwright-core";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
@@ -123,11 +124,41 @@ async function observe(instruction: string) {
   return (await tracedPost("observe", instruction, `/v1/sessions/${SESSION_ID}/observe`, { instruction })).json?.data?.result ?? [];
 }
 
+async function screenshot(label: string): Promise<string | null> {
+  const { json } = await tracedPost("screenshot", label, `/v1/sessions/${SESSION_ID}/screenshot`, {});
+  const b64 = json?.data?.screenshot || json?.data?.base64;
+  if (b64) {
+    const filename = `evidence-${String(stepN).padStart(2, "0")}-${label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.png`;
+    const filepath = `${REPRO_DIR}/${filename}`;
+    writeFileSync(filepath, Buffer.from(b64, "base64"));
+    console.log(`  📸 Saved ${filepath}`);
+    return filepath;
+  }
+  return null;
+}
+
 // ── MAIN ─────────────────────────────────────────────────────
 
 async function main() {
   if (!CDP_URL || !MODEL_API_KEY) { console.error("❌ Set CDP_URL and OPENROUTER_API_KEY in .env"); process.exit(1); }
   mkdirSync(REPRO_DIR, { recursive: true });
+
+  // ── Video recording via Playwright CDP ─────────────────────
+  // Connect to the SAME browser Stagehand will use, record everything
+  console.log("── Video: connecting Playwright recorder to CDP ──");
+  let videoRecorder: { context: any; page: any } | null = null;
+  try {
+    const browser = await chromium.connectOverCDP(CDP_URL);
+    const context = await browser.newContext({
+      recordVideo: { dir: REPRO_DIR, size: { width: 1280, height: 720 } },
+    });
+    const page = await context.newPage();
+    await page.goto(PLANE_URL);
+    videoRecorder = { context, page };
+    console.log(`  🎬 Recording video to ${REPRO_DIR}/\n`);
+  } catch (e) {
+    console.warn(`  ⚠️ Video recording skipped (CDP connect failed): ${e}`);
+  }
 
   console.log("╔══════════════════════════════════════════════╗");
   console.log("║  DRIVE — Issue #9124: Sub-task expand bug     ║");
@@ -153,11 +184,13 @@ async function main() {
 
   const loginCheck = await extract("What page am I on?");
   console.log(`  → ${loginCheck.text.slice(0, 80)}\n`);
+  await screenshot("after-login");
 
   // ── 2. Navigate to work items ──────────────────────────────
   console.log("── 2. Navigate to work items ──");
   await nav(`${PLANE_URL}/plane-dev/projects/9e2a160f-a44f-4777-a761-564ab5e572a4/issues`);
   await sleep(4000);
+  await screenshot("work-items-list");
 
   // ── 3. Check for tasks with sub-tasks ──────────────────────
   console.log("── 3. Find tasks with sub-tasks ──");
@@ -182,6 +215,7 @@ async function main() {
 
   const afterClick1 = await extract("Did the sub-task expand to show sub-sub-tasks? Or did nothing happen?");
   console.log(`    ${afterClick1.text.slice(0, 120)}\n`);
+  await screenshot("after-expand-click-1");
 
   // Second click
   console.log("  → Click 2:");
@@ -190,6 +224,7 @@ async function main() {
 
   const afterClick2 = await extract("Did the sub-task expand now? Are sub-sub-tasks visible?");
   console.log(`    ${afterClick2.text.slice(0, 120)}\n`);
+  await screenshot("after-expand-click-2");
 
   // Third click
   console.log("  → Click 3:");
@@ -198,6 +233,7 @@ async function main() {
 
   const afterClick3 = await extract("Did the sub-task finally expand? Are sub-sub-tasks visible now?");
   console.log(`    ${afterClick3.text.slice(0, 120)}\n`);
+  await screenshot("after-expand-click-3");
 
   // ── 6. Verdict ─────────────────────────────────────────────
   console.log("── 6. Verdict ──");
@@ -241,7 +277,21 @@ ${verdictText}
 `;
   writeFileSync(`${REPRO_DIR}/verdict.md`, verdictMd);
 
+  await screenshot("final-state");
+
   saveTraces();
+
+  // ── Close video recorder ───────────────────────────────────
+  if (videoRecorder) {
+    try {
+      await videoRecorder.page.close();
+      await videoRecorder.context.close();
+      console.log(`  🎬 Video saved to ${REPRO_DIR}/`);
+    } catch (e) {
+      console.warn(`  ⚠️ Video close failed: ${e}`);
+    }
+  }
+
   console.log("\n✅ DRIVE COMPLETE");
 }
 

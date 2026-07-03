@@ -5,12 +5,20 @@
   "type": "module",
   "scripts": {
     "drive": "npx tsx scripts/drive-v3.ts",
-    "replay": "npx playwright test",
+    "drive:9329": "npx tsx scripts/drive-v3.ts",
+    "drive:9050": "npx tsx scripts/drive-9050.ts",
+    "drive:9124": "npx tsx scripts/drive-9124.ts",
+    "replay": "npx playwright test reproductions/9329/repro.spec.ts",
+    "replay:9329": "npx playwright test reproductions/9329/repro.spec.ts",
+    "replay:9050": "npx playwright test reproductions/9050/repro.spec.ts",
+    "replay:9124": "npx playwright test reproductions/9124/repro.spec.ts",
+    "replay:all": "npx playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@playwright/test": "^1.52.0",
     "dotenv": "^17.4.2",
+    "playwright-core": "^1.52.0",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   },

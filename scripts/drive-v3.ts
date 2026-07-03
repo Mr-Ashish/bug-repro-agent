@@ -11,6 +11,7 @@
  */
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "fs";
+import { chromium } from "playwright-core";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
@@ -165,6 +166,19 @@ async function observe(instruction: string) {
   return json?.data?.result ?? [];
 }
 
+async function screenshot(label: string): Promise<string | null> {
+  const { json } = await tracedPost("screenshot", label, `/v1/sessions/${SESSION_ID}/screenshot`, {});
+  const b64 = json?.data?.screenshot || json?.data?.base64;
+  if (b64) {
+    const filename = `evidence-${String(stepN).padStart(2, "0")}-${label.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.png`;
+    const filepath = `${REPRO_DIR}/${filename}`;
+    writeFileSync(filepath, Buffer.from(b64, "base64"));
+    console.log(`  📸 Saved ${filepath}`);
+    return filepath;
+  }
+  return null;
+}
+
 // ── MAIN ─────────────────────────────────────────────────────
 
 async function main() {
@@ -178,6 +192,23 @@ async function main() {
   }
 
   mkdirSync(REPRO_DIR, { recursive: true });
+
+  // ── Video recording via Playwright CDP ─────────────────────
+  // Connect to the SAME browser Stagehand will use, record everything
+  console.log("── Video: connecting Playwright recorder to CDP ──");
+  let videoRecorder: { context: any; page: any } | null = null;
+  try {
+    const browser = await chromium.connectOverCDP(CDP_URL);
+    const context = await browser.newContext({
+      recordVideo: { dir: REPRO_DIR, size: { width: 1280, height: 720 } },
+    });
+    const page = await context.newPage();
+    await page.goto(PLANE_URL);
+    videoRecorder = { context, page };
+    console.log(`  🎬 Recording video to ${REPRO_DIR}/\n`);
+  } catch (e) {
+    console.warn(`  ⚠️ Video recording skipped (CDP connect failed): ${e}`);
+  }
 
   console.log("╔══════════════════════════════════════════════╗");
   console.log("║  DRIVE — Stagehand-only bug repro            ║");
@@ -215,6 +246,7 @@ async function main() {
   // Verify login
   const loginCheck = await extract("What page am I on? Is this a dashboard or login page?");
   console.log(`  → login: ${loginCheck.text.slice(0, 120)}\n`);
+  await screenshot("after-login");
 
   if (loginCheck.text.toLowerCase().includes("sign") || loginCheck.text.toLowerCase().includes("login")) {
     console.error("❌ Login failed — still on login page");
@@ -230,6 +262,7 @@ async function main() {
 
   const pageCheck = await extract("What page am I on? Can I see work items or issues?");
   console.log(`  → page: ${pageCheck.text.slice(0, 120)}\n`);
+  await screenshot("work-items-list");
 
   // ── 3. Add work item ───────────────────────────────────────
   console.log("── 3. Add work item ──");
@@ -241,6 +274,8 @@ async function main() {
   await act(`Click on the Title input field and type the following text: ${LONG_TITLE}`);
   await sleep(1000);
 
+  await screenshot("256-char-title-typed");
+
   // ── 5. Submit ──────────────────────────────────────────────
   console.log("── 5. Submit ──");
   await act("Press the Enter key to submit the work item");
@@ -248,6 +283,7 @@ async function main() {
 
   // ── 6. Capture evidence ────────────────────────────────────
   console.log("── 6. Capture evidence ──");
+  await screenshot("after-submit");
   const evidence = await extract(
     'Is there any error message, validation message, or toast? Look for text mentioning "255", "characters", "error", or "try again". Report the exact text.'
   );
@@ -266,10 +302,22 @@ async function main() {
   console.log("╚══════════════════════════════════════════════╝");
 
   saveTraces();
+
+  // ── Close video recorder ───────────────────────────────────
+  if (videoRecorder) {
+    try {
+      await videoRecorder.page.close();
+      await videoRecorder.context.close();
+      console.log(`  🎬 Video saved to ${REPRO_DIR}/`);
+    } catch (e) {
+      console.warn(`  ⚠️ Video close failed: ${e}`);
+    }
+  }
+
   console.log("\n✅ DRIVE COMPLETE");
 }
 
-main().catch((e) => {
+main().catch(async (e) => {
   console.error("\n💀 FATAL:", e);
   saveTraces();
   process.exit(1);
