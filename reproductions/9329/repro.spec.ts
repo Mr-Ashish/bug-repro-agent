@@ -78,7 +78,7 @@ test.describe("Issue #9329: 255-char title validation", () => {
       expect(hasGenericError).toBe(false); // This will fail, confirming the bug
     }
 
-    // If we reach here, the bug is fixed (descriptive validation shown)
+    // If we reach here, the reported bug was NOT REPRODUCED (descriptive validation shown)
     expect(hasDescriptiveMsg).toBe(true);
   });
 

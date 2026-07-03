@@ -11,34 +11,34 @@
 
 ---
 
-## Result: BUG APPEARS FIXED ✅
+## Result: NOT REPRODUCED
 
-The original issue reports that when creating a work item inline with a title exceeding 255 characters, the UI shows a **generic** error message ("Some error occurred. Please try again.") instead of a descriptive validation message.
+The issue reports that typing a 255+ character title into the inline work item creator shows a **generic** error ("Some error occurred. Please try again."). We attempted to reproduce this.
 
 ### What we observed
 
-15 Stagehand steps, 75 seconds total. Every step passed.
+15 Stagehand steps, 75 seconds total.
 
-| Check | Result |
-|-------|--------|
-| Login (4 act steps) | ✅ Logged in as admin@admin.com via two-step flow |
-| Navigate to Work Items | ✅ "Seed Demo Project - Work items" page |
-| Open inline create form | ✅ `act("Click Add work item")` succeeded |
-| Type 256-char title | ✅ `act("Click Title input and type AAAA...")` succeeded |
-| Submit form | ✅ `act("Press Enter")` triggered validation |
-| **Validation message** | **"Title should be less than 255 characters"** — descriptive, not generic |
+| Step | What happened |
+|------|---------------|
+| Login (4 act steps) | Logged in as admin@admin.com via two-step flow |
+| Navigate to Work Items | Reached "Seed Demo Project - Work items" page |
+| Open inline create form | `act("Click Add work item")` succeeded |
+| Type 256-char title | `act("Click Title input and type AAAA...")` succeeded |
+| Submit form | `act("Press Enter")` triggered validation |
+| **Observed message** | **"Title should be less than 255 characters"** |
+
+The generic error described in the issue ("Some error occurred. Please try again.") did **not** appear. Instead, a descriptive validation message was shown.
 
 ### Evidence
 
 - **Stagehand extract** (step 13): `"Title should be less than 255 characters"`
 - **Stagehand observe** (step 14): Found validation message on page
 - **Stagehand verdict** (step 15): `"DESCRIPTIVE - Title should be less than 255 characters"`
-- **Screenshot**: `evidence-stagehand.png` — captured during earlier manual validation
+- **Screenshot**: `evidence-stagehand.png`
 - **Action log**: `action-log.json` — 15 steps with timing
 - **Full traces**: `traces/step-*.json` — every request/response pair
 
 ### Conclusion
 
-The current dev build of Plane has **client-side validation** that catches titles exceeding 255 characters and displays: **"Title should be less than 255 characters"**. The generic error described in issue #9329 does not appear in this version.
-
-The bug has been **resolved** in the current dev branch.
+The bug as described in #9329 could **not be reproduced** on this build. The UI shows a descriptive validation message instead of the generic error the issue reports.

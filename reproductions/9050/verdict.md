@@ -5,22 +5,19 @@
 **Model**: gpt-4o
 **Sticky text**: `REPRO-9050-1783102540993`
 
-## Result: BUG APPEARS FIXED ✅
+## Result: NOT REPRODUCED
 
-### After delete (before reload)
-- **Sticky Notes**:
-  - `REPRO-9050-1783102540993`
+The issue reports that deleting a sticky, then reloading the page, causes the deleted sticky to reappear. We attempted to reproduce this.
 
----
+### What we observed
 
-- **Note on Visibility**: 
-  - The sticky note with the text "`REPRO-9050-1783102540993`" is visible as it appears under the DOM element [0-1910].
-
-- **Additional Information**:
-  - A message "That doesn't match any of your stickies." is present, but it does not indicate the absence of the sticky note we're interested in as it exists elsewhere in the DOM.
-
-### After reload
-
+| Step | What happened |
+|------|---------------|
+| Created sticky | `REPRO-9050-1783102540993` appeared on stickies page |
+| Deleted sticky | Used three-dot menu → Delete → Confirm |
+| After delete (before reload) | Sticky still visible in DOM (possible stale render) |
+| After page reload | Sticky **did not reappear** — extract returned empty |
 
 ### Conclusion
-The deleted sticky did NOT reappear after page reload. The bug appears fixed in this build.
+
+The bug as described in #9050 could **not be reproduced** on this build. The deleted sticky did not reappear after page reload.

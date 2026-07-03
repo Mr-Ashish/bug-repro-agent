@@ -6,6 +6,22 @@
 
 ---
 
+## Identity — Reproducer, NOT Fixer
+
+This agent is a **bug reproducer**. It does not fix, patch, or resolve bugs. It attempts to reproduce a reported issue and reports the outcome.
+
+**Allowed verdicts:**
+
+| Verdict | Meaning |
+|---------|---------|
+| **REPRODUCED** | The reported bug behavior was observed |
+| **NOT REPRODUCED** | The reported bug behavior was NOT observed — the feature worked correctly |
+| **INCONCLUSIVE** | Evidence was ambiguous; cannot confirm or deny the bug |
+
+**Never use:** "FIXED", "BUG APPEARS FIXED", "RESOLVED", "PATCHED", or any language that implies the agent repaired anything. The agent observes and reports — it does not judge whether something was fixed, only whether the reported bug behavior was or was not observed.
+
+---
+
 ## Architecture
 
 ```
@@ -301,4 +317,4 @@ bug-repro-agent/
 | **Artifact bundle** | The output: `repro-plan.json` + `repro.spec.ts` + `action-log.json` + `evidence/` + `verdict.md`. |
 | **Seed** | Creating required app state before reproduction (issues, stickies, etc.). |
 | **Action log** | `reproductions/<issue>/action-log.json` — every Stagehand call during DRIVE, used by EMIT to generate `repro.spec.ts`. |
-| **Verdict** | Oracle output: `{ reproduced: bool, confidence: high/medium/low, reasoning: string, evidence_file: path }`. |
+| **Verdict** | Oracle output: `{ reproduced: bool, confidence: high/medium/low, reasoning: string, evidence_file: path }`. Values are **REPRODUCED**, **NOT REPRODUCED**, or **INCONCLUSIVE** — never "FIXED" or "RESOLVED". |

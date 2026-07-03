@@ -230,15 +230,15 @@ async function main() {
   // ── 8. Verdict ─────────────────────────────────────────────
   console.log("── 8. Verdict ──");
   const stickyGone = !afterReload.text.includes(STICKY_TEXT);
-  const verdict = stickyGone ? "FIXED" : "REPRODUCED";
+  const verdict = stickyGone ? "NOT_REPRODUCED" : "REPRODUCED";
 
   if (verdict === "REPRODUCED") {
     console.log("\n╔══════════════════════════════════════════════╗");
-    console.log("║  🐛 BUG REPRODUCED: Deleted sticky came back ║");
+    console.log("║  🐛 REPRODUCED: Deleted sticky reappeared     ║");
     console.log("╚══════════════════════════════════════════════╝");
   } else {
     console.log("\n╔══════════════════════════════════════════════╗");
-    console.log("║  ✅ BUG APPEARS FIXED: Sticky stayed deleted  ║");
+    console.log("║  ⚪ NOT REPRODUCED: Sticky stayed deleted      ║");
     console.log("╚══════════════════════════════════════════════╝");
   }
 
@@ -250,7 +250,7 @@ async function main() {
 **Model**: ${MODEL}
 **Sticky text**: \`${STICKY_TEXT}\`
 
-## Result: ${verdict === "REPRODUCED" ? "BUG REPRODUCED 🐛" : "BUG APPEARS FIXED ✅"}
+## Result: ${verdict === "REPRODUCED" ? "REPRODUCED 🐛" : "NOT REPRODUCED"}
 
 ### After delete (before reload)
 ${afterDelete.text}
@@ -260,8 +260,8 @@ ${afterReload.text}
 
 ### Conclusion
 ${verdict === "REPRODUCED"
-    ? "The deleted sticky reappeared after page reload, confirming the bug described in #9050."
-    : "The deleted sticky did NOT reappear after page reload. The bug appears fixed in this build."}
+    ? "The deleted sticky reappeared after page reload — behavior matches the bug described in #9050."
+    : "The deleted sticky did NOT reappear after page reload. The bug as described could not be reproduced on this build."}
 `;
   writeFileSync(`${REPRO_DIR}/verdict.md`, verdictMd);
 

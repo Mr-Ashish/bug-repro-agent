@@ -8,7 +8,7 @@
  *   3. Find a task with sub-tasks (expand it — should work on 1 click)
  *   4. Find a sub-task with its own sub-tasks
  *   5. Try to expand the sub-task — count how many clicks it takes
- *   6. Report: 1 click = fixed, 3 clicks = bug reproduced
+ *   6. Report: 1 click = not reproduced, 3 clicks = reproduced
  */
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "fs";
@@ -202,7 +202,7 @@ async function main() {
   // ── 6. Verdict ─────────────────────────────────────────────
   console.log("── 6. Verdict ──");
   const verdictExtract = await extract(
-    'Summarize: How many clicks did it take to expand the sub-task? Did it expand on the 1st click (FIXED), or did it require 2-3 clicks (BUG)? Answer with FIXED or REPRODUCED and explain.'
+    'Summarize: How many clicks did it take to expand the sub-task? Did it expand on the 1st click (NOT_REPRODUCED), or did it require 2-3 clicks (REPRODUCED)? Answer with NOT_REPRODUCED or REPRODUCED and explain.'
   );
 
   const verdictText = verdictExtract.text;
@@ -210,11 +210,11 @@ async function main() {
 
   if (isReproduced) {
     console.log("\n╔══════════════════════════════════════════════╗");
-    console.log("║  🐛 BUG REPRODUCED: 3 clicks needed          ║");
+    console.log("║  🐛 REPRODUCED: Multiple clicks needed        ║");
     console.log("╚══════════════════════════════════════════════╝");
   } else {
     console.log("\n╔══════════════════════════════════════════════╗");
-    console.log("║  ✅ BUG NOT REPRODUCED / FIXED                ║");
+    console.log("║  ⚪ NOT REPRODUCED                             ║");
     console.log("╚══════════════════════════════════════════════╝");
   }
 
@@ -226,7 +226,7 @@ async function main() {
 **Date**: ${new Date().toISOString().split("T")[0]}
 **Model**: ${MODEL}
 
-## Result: ${isReproduced ? "BUG REPRODUCED 🐛" : "NOT REPRODUCED / FIXED ✅"}
+## Result: ${isReproduced ? "REPRODUCED 🐛" : "NOT REPRODUCED"}
 
 ### Click-by-click results
 

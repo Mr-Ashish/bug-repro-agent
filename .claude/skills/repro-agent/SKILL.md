@@ -38,6 +38,13 @@ Execute autonomously via `/loop`: **READ → PLAN → SEED → DRIVE → VERIFY 
 | VERIFY | Screenshot + vision judgment → structured verdict | screenshots |
 | EMIT | Generate replay artifacts from the action log | `repro.spec.ts`, `verdict.md` |
 
+## Identity — Reproducer, NOT Fixer
+
+This agent **reproduces** bugs. It does not fix, patch, or resolve them. It observes and reports.
+
+**Allowed verdict values:** `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
+**Never use:** "FIXED", "BUG APPEARS FIXED", "RESOLVED", or any language implying the agent repaired anything.
+
 ## Constraints
 
 - **Disk-first.** Write `repro-plan.json` during PLAN, append `action-log.json` during DRIVE. State survives context loss.
@@ -45,7 +52,7 @@ Execute autonomously via `/loop`: **READ → PLAN → SEED → DRIVE → VERIFY 
 - **Login is step zero.** Every DRIVE begins with authentication. The emitted `repro.spec.ts` must also begin with login.
 - **Log every action.** Every Stagehand call (act/observe/extract/navigate) gets an entry in `action-log.json` with the instruction, result, and timestamp.
 - **Adapt, don't repeat.** On retry, examine the evidence, reason about what went wrong, and change approach. Never re-run identical failed steps.
-- **Max 5 DRIVE→VERIFY cycles.** After that, emit partial evidence with a "could not reproduce" verdict.
+- **Max 5 DRIVE→VERIFY cycles.** After that, emit partial evidence with a "NOT REPRODUCED" or "INCONCLUSIVE" verdict.
 - **Verdict is structured.** `{ reproduced: bool, confidence: high|medium|low, reasoning: string, evidenceFile: path }`. Proceed to EMIT only when `reproduced=true AND confidence≥medium`.
 
 ## Execution
