@@ -16,7 +16,7 @@ import { chromium } from "playwright-core";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
-const MODEL = process.env.STAGEHAND_SESSION_MODEL || "gpt-4o";
+const MODEL = process.env.STAGEHAND_SESSION_MODEL || "anthropic/claude-sonnet-4";
 const MODEL_API_KEY = process.env.OPENROUTER_API_KEY!;
 const PLANE_URL = process.env.PLANE_URL || "http://localhost:3000";
 const PLANE_EMAIL = process.env.PLANE_EMAIL || "admin@admin.com";

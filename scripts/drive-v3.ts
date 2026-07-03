@@ -1,7 +1,7 @@
 /**
  * Stagehand-only bug reproduction driver.
  *
- * - Model: configurable via STAGEHAND_SESSION_MODEL env var (default: gpt-4o)
+ * - Model: configurable via STAGEHAND_SESSION_MODEL env var (default: anthropic/claude-sonnet-4)
  *   Must support structured output (response_format: json_schema).
  *   Claude via OpenRouter does NOT work — Stagehand can't parse the response.
  * - Every browser action goes through Stagehand REST API
@@ -15,7 +15,7 @@ import { chromium } from "playwright-core";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
-const MODEL = process.env.STAGEHAND_SESSION_MODEL || "gpt-4o";
+const MODEL = process.env.STAGEHAND_SESSION_MODEL || "anthropic/claude-sonnet-4";
 const PLANE_URL = process.env.PLANE_URL || "http://localhost:3000";
 const PLANE_EMAIL = process.env.PLANE_EMAIL || "admin@admin.com";
 const PLANE_PASSWORD = process.env.PLANE_PASSWORD || "qweQWE123!@#";

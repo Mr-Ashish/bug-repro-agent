@@ -17,10 +17,9 @@ Given `/repro <github-issue-url>`, autonomously reproduce the bug in a running l
 
 ## Model constraint
 
-Stagehand requires structured output (`response_format: json_schema`). Only models that support this work:
-- ✅ `gpt-4o`, `gpt-4o-mini` (via OpenRouter)
-- ❌ `anthropic/claude-sonnet-4` via OpenRouter (response parsing fails)
-- ❌ Claude models via OpenRouter's OpenAI-compat endpoint (no structured output support)
+Stagehand model is configurable via `STAGEHAND_SESSION_MODEL` env var.
+- Default: `anthropic/claude-sonnet-4` (via OpenRouter)
+- Also works: `gpt-4o`, `gpt-4o-mini` (via OpenRouter)
 
 Pass the model API key via `x-model-api-key` header on every Stagehand request.
 
