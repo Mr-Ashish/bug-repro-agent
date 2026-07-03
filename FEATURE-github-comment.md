@@ -9,12 +9,13 @@
 
 **repro-agent** is a hackathon project for the Browser-Use Hackathon (July 4, 2026, Bengaluru).
 
-It autonomously reproduces bugs from GitHub issues in a running [Plane](https://github.com/makeplane/plane) instance using [browser-use](https://github.com/browser-use/browser-use) (Python agent on Playwright), then emits deterministic Playwright tests + evidence artifacts.
+It autonomously reproduces bugs from GitHub issues in a running [Plane](https://github.com/makeplane/plane) instance using [browser-use](https://github.com/browser-use/browser-use) (Python agent on Playwright) and saves evidence artifacts.
 
-### Architecture (two phases)
+> **Updated:** Reflects pure-Python architecture. No TypeScript/Node.js layer.
 
-- **Phase 1 — Author:** Python `scripts/drive.py` runs a browser-use agent (Claude Sonnet 4 via OpenRouter) that drives Chrome via CDP, reproduces the bug, saves artifacts to `reproductions/<issue>/`.
-- **Phase 2 — Replay:** The emitted `reproductions/<issue>/repro.spec.ts` is a standard Playwright test. No AI, no browser-use. Runs with `npx playwright test`.
+### Architecture
+
+Python `scripts/drive.py` runs a browser-use agent (Claude Sonnet 4 via OpenRouter) that drives Chrome via CDP, reproduces the bug, saves artifacts to `reproductions/<issue>/`.
 
 ### Existing artifact bundle (produced by `drive.py`)
 
@@ -22,28 +23,27 @@ After a successful run, `reproductions/<issue>/` contains:
 
 ```
 reproductions/9329/
-├── repro-plan.json          # structured reproduction plan
+├── issue.json               # fetched issue (title, body, URL)
+├── task-prompt.txt           # full prompt sent to agent
 ├── action-log.json          # every agent step (thought, actions, result, URL)
-├── repro.spec.ts            # deterministic Playwright test
-├── traces/
-│   └── full-trace.json      # complete browser-use agent history
-├── conversation.json        # full LLM conversation log
 ├── evidence-*.png           # screenshots at each step
 ├── agent-run.gif            # animated GIF of browser session
-└── verdict.md               # human-readable verdict (current format)
+├── conversation.json        # full LLM conversation log
+├── verdict.md               # parsed verdict + run stats
+├── error.txt                # written on crash/timeout (if any)
+├── github-comment.md        # generated GitHub comment (from post_comment.py)
+└── traces/
+    └── full-trace.json      # complete browser-use agent history
 ```
 
-### Key files to understand
+### Key files
 
-| File | What it does | Language |
-|------|-------------|----------|
-| `scripts/drive.py` | Main driver — runs browser-use agent, saves all artifacts | Python |
-| `lib/artifact-emitter.ts` | Generates `repro.spec.ts` and `verdict.md` from action log | TypeScript |
-| `lib/plane-adapter.ts` | Plane URLs, credentials, nav patterns | TypeScript |
-| `lib/plane_config.py` | Same as above, Python version | Python |
-| `lib/repro-plan.schema.ts` | TypeScript types for `ReproPlan`, `ActionLogEntry`, `Verdict` | TypeScript |
-| `HLD.md` | Full architecture doc | — |
-| `DESIGN.md` | Core design principle (author vs replay) | — |
+| File | What it does |
+|------|-------------|
+| `scripts/drive.py` | Main driver — fetches issue, runs browser-use agent, saves all artifacts |
+| `scripts/post_comment.py` | Reads artifacts, generates + posts GitHub comment |
+| `HLD.md` | Full architecture doc |
+| `DESIGN.md` | Core design principles |
 
 ---
 
@@ -53,25 +53,23 @@ reproductions/9329/
 
 After a successful reproduction run, generate a **rich GitHub issue comment** and post it to the source issue using `gh issue comment`. The comment should contain:
 
-1. **Verdict header** — reproduced/not reproduced/inconclusive, confidence, bug class, run stats
-2. **Agent-run GIF** — embedded animated GIF showing the full browser session
+1. **Verdict header** — reproduced/not reproduced/inconclusive, summary, run stats
+2. **Agent-run GIF** — embedded animated GIF showing the full browser session (if image URL provided)
 3. **Step-by-step action table** — every action the agent took, formatted as a Markdown table
-4. **Key evidence screenshot** — the critical frame (e.g., the error toast for #9329)
-5. **Regression test code block** — the `repro.spec.ts` content as a syntax-highlighted TypeScript block
-6. **Footer** — tool attribution, links to full trace and action log
+4. **Key evidence screenshot** — the critical frame (if image URL provided)
+5. **Footer** — tool attribution
 
 ### Why
 
-The demo currently ends with artifacts sitting in a local folder. This feature closes the loop: the agent reports back to the GitHub issue where the bug was filed. The person who reported the bug gets a complete QA investigation — video, steps, evidence, and a regression test — without a human touching it.
+The demo currently ends with artifacts sitting in a local folder. This feature closes the loop: the agent reports back to the GitHub issue where the bug was filed. The person who reported the bug gets a complete QA investigation — video, steps, and evidence — without a human touching it.
 
-This is the climactic "kicker" beat in the hackathon demo. The audience sees the GitHub issue page (which started with a text report from a user) now has a comment from the agent with a GIF, a structured investigation, and executable code. The response is richer than the report.
+This is the climactic "kicker" beat in the hackathon demo. The audience sees the GitHub issue page (which started with a text report from a user) now has a comment from the agent with a GIF, a structured investigation, and step-by-step evidence. The response is richer than the report.
 
 ### Demo flow
 
 1. `python scripts/drive.py --issue 9329` → agent reproduces the bug, saves artifacts
-2. `npx playwright test reproductions/9329/repro.spec.ts` → deterministic replay works
-3. **NEW:** Agent posts the reproduction report to the GitHub issue as a comment
-4. Refresh the issue page → the comment renders with GIF, table, code block
+2. `python scripts/post_comment.py --issue 9329` → posts reproduction report to the GitHub issue
+3. Refresh the issue page → the comment renders with verdict, step table, evidence
 
 ---
 
@@ -82,20 +80,15 @@ This is the climactic "kicker" beat in the hackathon demo. The audience sees the
 Create a Python script that:
 
 1. Reads artifacts from `reproductions/<issue>/`
-2. Uploads images (GIF + key screenshot) to get publicly accessible URLs
+2. Reads optional `image-urls.json` for pre-uploaded GIF/screenshot URLs
 3. Generates a formatted Markdown comment body
 4. Posts it via `gh issue comment <number> --repo makeplane/plane --body-file <path>`
 
 **CLI interface:**
 ```bash
 python scripts/post_comment.py --issue 9329
-```
-
-**Or add npm script:**
-```json
-{
-  "report:9329": "python scripts/post_comment.py --issue 9329"
-}
+python scripts/post_comment.py --issue 9329 --dry-run    # generate only
+python scripts/post_comment.py --issue 9329 --repo user/fork
 ```
 
 ### 2. Comment body format
@@ -143,21 +136,9 @@ The generated Markdown must render correctly on GitHub. Here is the exact templa
 
 #### Regression Test
 
-```typescript
-test('reproduce #9329: 255+ char title shows generic error', async ({ page }) => {
-  await page.goto('/');
-  await page.fill('input[name="email"]', 'admin@admin.com');
-  await page.click('button:has-text("Continue")');
-  await page.fill('input[type="password"]', '***');
-  await page.click('button:has-text("Go to workspace")');
-  await page.waitForURL('**/plane-dev/**');
-  // ... reproduction steps ...
-});
-```
-
 ---
 
-<sub>Generated by <b>repro-agent</b> · browser-use + Claude Sonnet 4 via OpenRouter · <a href="<TRACE_URL>">full trace</a> · <a href="<LOG_URL>">action log</a></sub>
+<sub>Generated by <b>repro-agent</b> · browser-use + Claude Sonnet 4 via OpenRouter</sub>
 ````
 
 ### 3. Image hosting for the comment
@@ -226,50 +207,34 @@ The script must transform this into the Markdown table format. Logic:
 
 For the hackathon, it's acceptable to use heuristics or even have per-issue formatting logic (like `drive.py` already does for verdict generation). Generalization can come later.
 
-### 5. Reading the Playwright test for the code block
-
-Read `reproductions/<issue>/repro.spec.ts` and embed it as a fenced TypeScript code block. Mask the password (replace the actual password with `***`).
-
-### 6. Cost calculation
+### 5. Cost calculation
 
 The cost can be estimated from:
 - `conversation.json` — count input/output tokens (if available in the conversation metadata)
 - Or hardcode an approximate per-run cost based on the model pricing (Claude Sonnet 4 via OpenRouter ≈ $3/1M input, $15/1M output)
 - For the hackathon, an approximate number (e.g., "$0.14") from a real run is fine
 
-### 7. Run stats
+### 6. Run stats
 
-Pull from `action-log.json`:
-- **Steps:** length of the array
-- **Duration:** difference between first and last timestamp
-- Or from the verdict.md which already contains `history.total_duration_seconds()` and `history.number_of_steps()`
+Pull from `verdict.md` which already contains `history.total_duration_seconds()` and `history.number_of_steps()`, or from `action-log.json` (length of array, first/last timestamp).
 
 ---
 
 ## Implementation Steps
 
 1. **Create `scripts/post_comment.py`** — new Python script
-2. **Add the comment template** — Markdown string with placeholders for verdict, GIF URL, step table, screenshot URL, test code, stats
+2. **Add the comment template** — Markdown string with placeholders for verdict, GIF URL, step table, screenshot URL, stats
 3. **Add `action-log.json` → step table parser** — transforms raw action log into the `| # | Action | Detail | Result |` format
 4. **Add image URL resolution** — reads URLs from `reproductions/<issue>/image-urls.json` (Option A) or uploads via API (Option B)
-5. **Add password masking** — when embedding `repro.spec.ts`, replace real password with `***`
+5. **Add password masking** — replace real password with `***` everywhere
 6. **Shell out to `gh issue comment`** — use `subprocess.run()` to post
-7. **Add npm scripts** in `package.json`:
-   ```json
-   {
-     "report": "python scripts/post_comment.py --issue 9329",
-     "report:9329": "python scripts/post_comment.py --issue 9329",
-     "report:9050": "python scripts/post_comment.py --issue 9050",
-     "report:9124": "python scripts/post_comment.py --issue 9124"
-   }
-   ```
-8. **Test against a fork** first — don't post to the real `makeplane/plane` issue until demo day
+7. **Test against a fork** first — don't post to the real `makeplane/plane` issue until demo day
 
 ---
 
 ## Constraints
 
-- **Python only** — this script is part of the Python side of the codebase (alongside `drive.py`), not the TypeScript side
+- **Python only** — pure Python, no TypeScript/Node.js dependencies
 - **`gh` CLI required** — the script uses `gh issue comment`, so `gh` must be installed and authenticated
 - **No new dependencies** — use stdlib (`json`, `subprocess`, `pathlib`, `re`) and `dotenv` (already in requirements)
 - **Password masking is mandatory** — never embed real passwords in a GitHub comment, even on a demo repo
@@ -283,7 +248,7 @@ Pull from `action-log.json`:
 
 1. `python scripts/post_comment.py --issue 9329` generates a Markdown file at `reproductions/9329/github-comment.md`
 2. The generated Markdown renders correctly on GitHub (test by pasting into any issue comment box)
-3. The comment contains: verdict header, GIF (via URL), step table (from action log), evidence screenshot (via URL), Playwright test code block (with masked password), footer
+3. The comment contains: verdict header, GIF (via URL if available), step table (from action log), evidence screenshot (via URL if available), footer
 4. The script posts the comment via `gh issue comment` (with a `--dry-run` flag that only generates the file without posting)
 5. Passwords are masked everywhere in the output
 6. The script exits cleanly with an error message if `reproductions/<issue>/` doesn't exist or is missing required files
@@ -300,9 +265,8 @@ Pull from `action-log.json`:
 
 | File | Change |
 |------|--------|
-| `package.json` | Add `report`, `report:9329`, `report:9050`, `report:9124` npm scripts |
-| `HLD.md` | Add a REPORT phase after EMIT in the architecture section |
-| `SKILL.md` (`.claude/skills/repro-agent/SKILL.md`) | Add REPORT phase to the phase table |
+| `HLD.md` | Add post_comment.py to architecture section |
+| `SKILL.md` (`.claude/skills/repro-agent/SKILL.md`) | Mention reporting capability |
 
 ---
 

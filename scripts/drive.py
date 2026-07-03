@@ -16,8 +16,10 @@ import json
 import base64
 import os
 import re
+import socket
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 
@@ -36,6 +38,69 @@ PLANE_WORKSPACE = os.getenv("PLANE_WORKSPACE", "plane-dev")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MODEL = os.getenv("BROWSER_USE_MODEL", "anthropic/claude-sonnet-4")
 DEFAULT_REPO = os.getenv("GITHUB_REPO", "makeplane/plane")
+
+# Exit codes
+EXIT_REPRODUCED = 0
+EXIT_NOT_REPRODUCED = 1
+EXIT_INCONCLUSIVE = 2
+EXIT_ERROR = 3
+
+
+# ── Pre-flight checks ────────────────────────────────────────
+
+
+def discover_cdp_url(debug_port: int = 9222) -> str:
+    """Auto-discover Chrome CDP browser-level WebSocket URL."""
+    try:
+        resp = urllib.request.urlopen(
+            f"http://localhost:{debug_port}/json/version", timeout=3
+        )
+        data = json.loads(resp.read())
+        ws_url = data["webSocketDebuggerUrl"]
+        print(f"  🔗 Auto-discovered CDP: {ws_url}")
+        return ws_url
+    except Exception:
+        return ""
+
+
+def preflight(cdp_url: str, plane_url: str) -> None:
+    """Fail fast if infrastructure isn't ready."""
+    errors = []
+
+    # 1. Chrome CDP reachable?
+    try:
+        ws_host = cdp_url.split("//")[1].split("/")[0]
+        host, port = ws_host.rsplit(":", 1)
+        sock = socket.create_connection((host, int(port)), timeout=3)
+        sock.close()
+    except Exception:
+        errors.append(f"Chrome CDP not reachable at {cdp_url}")
+
+    # 2. Plane responding?
+    try:
+        urllib.request.urlopen(plane_url, timeout=5)
+    except Exception:
+        errors.append(f"Plane not responding at {plane_url}")
+
+    # 3. gh CLI authenticated?
+    try:
+        subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True, check=True, timeout=5,
+        )
+    except FileNotFoundError:
+        errors.append("`gh` CLI not installed (https://cli.github.com/)")
+    except subprocess.CalledProcessError:
+        errors.append("`gh` CLI not authenticated (run `gh auth login`)")
+    except Exception:
+        errors.append("`gh` CLI check failed")
+
+    if errors:
+        print("❌ Pre-flight checks failed:")
+        for e in errors:
+            print(f"   • {e}")
+        sys.exit(EXIT_ERROR)
+    print("✅ Pre-flight: Chrome CDP, Plane, gh — all ready")
 
 
 # ── Issue fetching ────────────────────────────────────────────
@@ -58,11 +123,11 @@ def fetch_issue(issue_number: str, repo: str) -> dict:
         }
     except FileNotFoundError:
         print("❌ `gh` CLI not found. Install: https://cli.github.com/")
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
     except subprocess.CalledProcessError as e:
         print(f"❌ Failed to fetch issue #{issue_number} from {repo}")
         print(f"   {e.stderr.strip()}")
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
 
 
 # ── Prompt template ───────────────────────────────────────────
@@ -91,6 +156,20 @@ URL: {url}
 - Explore the app to find the right place. Don't give up if the first path doesn't work.
 - Take screenshots at key moments, especially when you see the bug (or don't).
 - If the bug report mentions specific data (long text, special characters, etc), create or use that exact data.
+
+## Plane UI navigation map
+- **Dashboard/Home:** {plane_url}/{workspace}/
+- **Projects list:** {plane_url}/{workspace}/projects/
+- **Issues (work items):** click a project → "Work Items" in left sidebar
+- **Cycles:** left sidebar → "Cycles"
+- **Modules:** left sidebar → "Modules"
+- **Pages:** left sidebar → "Pages"
+- **Stickies:** icon in the bottom-right floating toolbar (sticky note icon)
+- **Settings:** left sidebar bottom → gear icon
+- **Create issue:** "Add work item" button (top-right of issues list) or press 'C'
+- **Sub-issues:** open an issue → "Sub-work items" section below description
+- **Filters/Views:** toolbar above issue list → "Filters" dropdown
+Note: "Work Items" is Plane's term for issues. The left sidebar shows: Work Items, Cycles, Modules, Pages, Views.
 
 ## Required output format
 End your final message with EXACTLY one of these verdict lines:
@@ -128,6 +207,12 @@ VERDICT_DISPLAY = {
     "reproduced": "✅ REPRODUCED",
     "not_reproduced": "❌ NOT REPRODUCED",
     "inconclusive": "⚠️ INCONCLUSIVE",
+}
+
+VERDICT_EXIT_CODES = {
+    "reproduced": EXIT_REPRODUCED,
+    "not_reproduced": EXIT_NOT_REPRODUCED,
+    "inconclusive": EXIT_INCONCLUSIVE,
 }
 
 
@@ -241,18 +326,27 @@ def save_artifacts(history: AgentHistoryList, issue: dict, repro_dir: Path) -> N
 # ── Main ──────────────────────────────────────────────────────
 
 
-async def run(issue_number: str, repo: str) -> None:
-    """Fetch issue, build prompt, run agent, save artifacts."""
-    if not CDP_URL:
-        print("❌ Set CDP_URL in .env (e.g. ws://localhost:9222/devtools/browser/...)")
-        sys.exit(1)
+async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: int = 300) -> str:
+    """Fetch issue, build prompt, run agent, save artifacts.
 
+    Returns verdict key: 'reproduced', 'not_reproduced', or 'inconclusive'.
+    """
     if not OPENROUTER_API_KEY:
         print("❌ Set OPENROUTER_API_KEY in .env")
-        sys.exit(1)
+        sys.exit(EXIT_ERROR)
+
+    # ── CDP: auto-discover or use env ─────────────────────────
+    cdp_url = CDP_URL or discover_cdp_url()
+    if not cdp_url:
+        print("❌ Chrome not found. Start Chrome with --remote-debugging-port=9222")
+        print("   Or set CDP_URL in .env")
+        sys.exit(EXIT_ERROR)
+
+    # ── Pre-flight checks ─────────────────────────────────────
+    preflight(cdp_url, PLANE_URL)
 
     # ── Fetch issue ───────────────────────────────────────────
-    print(f"── Fetching issue #{issue_number} from {repo} ──")
+    print(f"\n── Fetching issue #{issue_number} from {repo} ──")
     issue = fetch_issue(issue_number, repo)
     task = build_task(issue)
 
@@ -260,8 +354,16 @@ async def run(issue_number: str, repo: str) -> None:
     repro_dir.mkdir(parents=True, exist_ok=True)
     (repro_dir / "traces").mkdir(exist_ok=True)
 
-    # Save the issue body for reference
+    # Save issue + prompt for debugging
     (repro_dir / "issue.json").write_text(json.dumps(issue, indent=2))
+    (repro_dir / "task-prompt.txt").write_text(task)
+
+    if dry_run:
+        print("\n── DRY RUN — prompt generated, not running agent ──")
+        print(f"  Prompt saved: {repro_dir}/task-prompt.txt")
+        print(f"  Issue saved:  {repro_dir}/issue.json")
+        print(f"\n{task}")
+        return "dry_run"
 
     print("╔══════════════════════════════════════════════════════╗")
     print("║  DRIVE — browser-use bug reproduction               ║")
@@ -269,14 +371,14 @@ async def run(issue_number: str, repo: str) -> None:
     print(f"  issue    : #{issue['number']} — {issue['title']}")
     print(f"  repo     : {repo}")
     print(f"  model    : {MODEL}")
-    print(f"  cdp      : {CDP_URL}")
+    print(f"  cdp      : {cdp_url}")
     print(f"  plane    : {PLANE_URL}")
     print(f"  output   : {repro_dir}/")
     print()
 
     # ── Configure browser ─────────────────────────────────────
     profile = BrowserProfile(
-        cdp_url=CDP_URL,
+        cdp_url=cdp_url,
         headless=False,
         viewport={"width": 1280, "height": 720},
         highlight_elements=True,
@@ -296,7 +398,7 @@ async def run(issue_number: str, repo: str) -> None:
         },
     )
 
-    # ── Run agent ─────────────────────────────────────────────
+    # ── Run agent (crash-safe) ────────────────────────────────
     print("── Starting browser-use agent ──")
 
     agent = Agent(
@@ -311,33 +413,60 @@ async def run(issue_number: str, repo: str) -> None:
         max_actions_per_step=5,
     )
 
+    history = None
+    agent_error = None
     try:
-        history = await agent.run(max_steps=50)
+        history = await asyncio.wait_for(
+            agent.run(max_steps=50), timeout=timeout
+        )
+    except asyncio.TimeoutError:
+        agent_error = f"Agent timed out after {timeout}s"
+        print(f"\n💀 {agent_error}")
     except Exception as e:
-        print(f"\n💀 Agent run failed: {e}")
-        raise
+        agent_error = f"{type(e).__name__}: {e}"
+        print(f"\n💀 Agent run failed: {agent_error}")
     finally:
         try:
             await browser.close()
         except Exception:
             pass
 
-    # ── Save artifacts ────────────────────────────────────────
+    # ── Save artifacts (even on crash) ────────────────────────
     print("\n── Saving artifacts ──")
-    save_artifacts(history, issue, repro_dir)
+    if history and history.history:
+        save_artifacts(history, issue, repro_dir)
+    else:
+        print("  ⚠️ No agent history — saving error report only")
+
+    if agent_error:
+        (repro_dir / "error.txt").write_text(
+            f"Agent error: {agent_error}\n"
+            f"Time: {datetime.now().isoformat()}\n"
+        )
+        print(f"  💀 Error saved: {repro_dir}/error.txt")
 
     # ── Summary ───────────────────────────────────────────────
-    result = history.final_result() or "(no result)"
-    status, _, summary = parse_verdict(result)
-    print(f"\n{'═' * 54}")
-    print(f"  Issue     : #{issue['number']} — {issue['title']}")
-    print(f"  Steps     : {history.number_of_steps()}")
-    print(f"  Duration  : {history.total_duration_seconds():.1f}s")
-    print(f"  Verdict   : {status}")
-    print(f"  Summary   : {summary}")
-    print(f"  Artifacts : {repro_dir}/")
-    print(f"{'═' * 54}")
-    print("\n✅ DRIVE COMPLETE")
+    if history and history.history:
+        result = history.final_result() or "(no result)"
+        status, verdict_key, summary = parse_verdict(result)
+        print(f"\n{'═' * 54}")
+        print(f"  Issue     : #{issue['number']} — {issue['title']}")
+        print(f"  Steps     : {history.number_of_steps()}")
+        print(f"  Duration  : {history.total_duration_seconds():.1f}s")
+        print(f"  Verdict   : {status}")
+        print(f"  Summary   : {summary}")
+        print(f"  Artifacts : {repro_dir}/")
+        print(f"{'═' * 54}")
+        print("\n✅ DRIVE COMPLETE")
+        return verdict_key
+    else:
+        print(f"\n{'═' * 54}")
+        print(f"  Issue     : #{issue['number']} — {issue['title']}")
+        print(f"  Verdict   : 💀 CRASHED")
+        print(f"  Error     : {agent_error}")
+        print(f"  Artifacts : {repro_dir}/ (partial)")
+        print(f"{'═' * 54}")
+        return "error"
 
 
 def cli():
@@ -347,7 +476,10 @@ def cli():
         epilog="Examples:\n"
                "  python scripts/drive.py --issue 9329\n"
                "  python scripts/drive.py --issue 9329 --repo makeplane/plane\n"
-               "  python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329",
+               "  python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329\n"
+               "  python scripts/drive.py --issue 9329 --dry-run\n"
+               "  python scripts/drive.py --issue 9329 --timeout 600\n"
+               "\nExit codes: 0=reproduced, 1=not reproduced, 2=inconclusive, 3=error",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group(required=True)
@@ -357,18 +489,27 @@ def cli():
         "--repo", default=DEFAULT_REPO,
         help=f"GitHub repo (default: {DEFAULT_REPO})",
     )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Generate prompt and exit without running agent",
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=300,
+        help="Agent timeout in seconds (default: 300)",
+    )
     args = parser.parse_args()
 
     if args.url:
         m = re.match(r"https?://github\.com/([^/]+/[^/]+)/issues/(\d+)", args.url)
         if not m:
             print(f"❌ Invalid GitHub issue URL: {args.url}")
-            sys.exit(1)
+            sys.exit(EXIT_ERROR)
         repo, issue_number = m.group(1), m.group(2)
     else:
         repo, issue_number = args.repo, args.issue
 
-    asyncio.run(run(issue_number, repo))
+    verdict = asyncio.run(run(issue_number, repo, dry_run=args.dry_run, timeout=args.timeout))
+    sys.exit(VERDICT_EXIT_CODES.get(verdict, EXIT_ERROR))
 
 
 if __name__ == "__main__":
