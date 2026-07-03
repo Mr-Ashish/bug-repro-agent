@@ -61,11 +61,14 @@ If something is broken beyond that, it's a human problem.
 
 ## Guiding the browser agent with Plane source code
 
-Before running drive.py, you can improve the agent's success rate by reading Plane's source code to find relevant URL patterns and UI structure. For example:
+Before running drive.py, you can improve the agent's success rate by reading Plane's source code to find relevant URL patterns and UI structure.
+
+**Important:** Plane's web app is at `plane/apps/web/`, NOT `plane/web/`. Always use the `apps/` prefix.
+
 ```bash
 # Find URL routes for the feature mentioned in the bug
-grep -r "states" plane/web/app/ --include="*.tsx" -l | head -10
-grep -r "settings" plane/web/helpers/route*.ts 2>/dev/null | head -10
+find plane/apps/web/app -type d -name "states" 2>/dev/null
+grep -r "states" plane/apps/web/app/ --include="*.tsx" -l | head -10
 ```
 This helps you understand where in the app the bug lives, so you can provide better context in the task prompt or verify the agent navigated to the right place.
 
