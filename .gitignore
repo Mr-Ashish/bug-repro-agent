@@ -8,24 +8,10 @@ dist/
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 
-# browser-use generated artifacts (regenerated per run)
-reproductions/*/*.mp4
-reproductions/*/*.gif
-reproductions/*/conversation.json
-reproductions/*/issue.json
-
-# Trace files with full DOM snapshots (too large for git)
-reproductions/*/traces/full-trace.json
-reproductions/*/traces/step-*-navigate.json
-
-# Per-run artifacts (regenerated, may contain passwords)
-reproductions/*/task-prompt.txt
-reproductions/*/error.txt
-reproductions/*/verdict.md
-reproductions/*/action-log.json
-reproductions/*/evidence-*.png
-reproductions/*/github-comment.md
+# All reproduction run artifacts (regenerated per run, may contain passwords)
+reproductions/*/
 
 # Playwright test output (videos, traces, screenshots from replay)
 test-results/
@@ -33,3 +19,5 @@ test-results/
 # IDE / tool artifacts
 .lavish/
 .playwright-mcp/
+.vscode/
+.idea/
