@@ -146,56 +146,33 @@ def fetch_issue(issue_number: str, repo: str) -> dict:
 
 # ── Prompt template ───────────────────────────────────────────
 
-TASK_TEMPLATE = """You are a QA engineer reproducing a bug in Plane (project management app).
+TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 
-## App details
+## App
 - URL: {plane_url}
-- Login: email "{email}", password "{password}"
+- Credentials: {email} / {password}
 - Workspace: {workspace}
 
-## Bug report (GitHub issue #{number})
-Title: {title}
-URL: {url}
+## Bug (issue #{number})
+{title}
+{url}
 
 {body}
 
-## Your job
-1. Log in to Plane at {plane_url}.
-2. Read the bug report above. Figure out what steps reproduce it.
-3. Execute those steps in the browser.
-4. Observe what actually happens vs what the bug report says should happen.
+## Principles
+- **You are a reproducer, not a fixer.** Execute the steps, observe, report.
+- **Navigate by URL when possible.** Plane URLs follow: `{plane_url}/{workspace}/projects/<project-id>/settings/states/`. Use the address bar instead of hunting through menus.
+- **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
+- **Use context menus.** Settings and destructive actions in Plane are behind ⋯ (three-dot) menus on project names, not in the main sidebar.
+- **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed. Don't panic.
+- **Budget your steps.** You have limited actions. If the same approach fails twice, switch strategies.
 
-## Rules
-- You are a REPRODUCER, not a fixer. You observe and report.
-- Explore the app to find the right place. Don't give up if the first path doesn't work.
-- Take screenshots at key moments, especially when you see the bug (or don't).
-- If the bug report mentions specific data (long text, special characters, etc), create or use that exact data.
+## Verdict format
+End your final message with exactly one line:
 
-## Plane UI navigation map
-- **Dashboard/Home:** {plane_url}/{workspace}/
-- **Projects list:** {plane_url}/{workspace}/projects/
-- **Issues (work items):** click a project → "Work Items" in left sidebar
-- **Cycles:** left sidebar → "Cycles"
-- **Modules:** left sidebar → "Modules"
-- **Pages:** left sidebar → "Pages"
-- **Stickies:** icon in the bottom-right floating toolbar (sticky note icon)
-- **Create issue:** "Add work item" button (top-right of issues list) or press 'C'
-- **Sub-issues:** open an issue → "Sub-work items" section below description
-- **Filters/Views:** toolbar above issue list → "Filters" dropdown
-- **Project Settings:** in left sidebar, scroll down to "Work Structure" section, or look for a gear icon near the project name. The settings page has sub-sections: General, Members, Features (Cycles, Modules, Views, Pages, Intake), Work Structure (States, Labels, Estimates), Execution (Automations).
-- **States settings:** Project Settings → left sidebar → "States" under "Work Structure"
-Note: "Work Items" is Plane's term for issues. The left sidebar shows: Work Items, Cycles, Modules, Pages, Views.
-Note: If you cannot find a navigation element, try using the URL bar directly — Plane URLs follow the pattern: {plane_url}/{workspace}/projects/<project-id>/settings/ for project settings.
-
-## Required output format
-End your final message with EXACTLY one of these verdict lines:
-
-VERDICT: REPRODUCED | <one-line summary of what you saw>
-VERDICT: NOT_REPRODUCED | <one-line summary — the feature worked correctly>
-VERDICT: INCONCLUSIVE | <one-line summary — why you couldn't determine>
-
-The verdict line must start with "VERDICT:" and use one of the three values above.
-Include a pipe separator and a brief description after it."""
+VERDICT: REPRODUCED | <what you saw>
+VERDICT: NOT_REPRODUCED | <the feature worked correctly>
+VERDICT: INCONCLUSIVE | <why you couldn't determine>"""
 
 
 def build_task(issue: dict) -> str:
