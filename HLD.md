@@ -81,19 +81,30 @@ Assertions baked in from the oracle spec. Runs in seconds. Becomes a regression 
 
 ---
 
-## Loop Phases — Detail
+## Complete Flow
+
+### PRE-CHECK (before entering the loop)
+
+1. Validate the URL is a GitHub issue (not a PR, discussion, etc.)
+2. Ping Stagehand server (`GET localhost:3000/healthz`)
+3. Ping Plane (`GET localhost` — login page loads)
+4. Start Stagehand session (`POST /v1/sessions/start`) — one session for the entire loop
+
+If any fail → exit with clear error, don't enter the loop.
+
+### Loop Phases
 
 ### 1. READ
 
 **Input:** GitHub issue URL
-**Action:** Fetch issue via `gh` CLI. Extract title, body, steps to reproduce, expected vs actual behavior.
-**Output:** Structured issue data for the planner.
+**Mechanism:** `gh issue view <number> --repo makeplane/plane --json title,body,comments` via bash.
+**Output:** Structured issue data (title, body, steps to reproduce, expected vs actual).
 
 ### 2. PLAN
 
-**Input:** Issue data
-**Action:** Claude Code classifies the bug type (UI interaction, state persistence, form validation, etc.) and emits a structured plan.
-**Output:** `repro-plan.json`
+**Input:** Issue data from READ
+**Action:** Claude Code classifies the bug type and emits a structured plan.
+**Output:** `reproductions/<issue>/repro-plan.json` — **written to disk immediately**.
 
 ```json
 {
@@ -134,37 +145,70 @@ Claude Code dynamically decides what seeding is needed based on the issue.
 ### 4. DRIVE
 
 **Input:** `repro-plan.json` steps
-**Action:** Execute each step against live Plane via Stagehand REST API:
+**First step is always login:** Navigate to login page → fill email/password → click Sign In → verify dashboard loaded.
+**Then bug-specific steps** via Stagehand REST API:
 - `navigate(url)` — go to the right page
-- `act(instruction)` — perform NL-described actions ("click the Add Work Item button", "type 256 characters into the title field")
+- `act(instruction)` — perform NL-described actions
 - `observe(instruction)` — discover available elements when unsure
 - `extract(instruction, schema)` — pull structured data from the page
 
-Claude Code calls these via a TypeScript REST client (`lib/stagehand-client.ts`).
+**Execution mechanism:** Claude Code writes small inline TS scripts that import `lib/stagehand-client.ts`, runs them with `npx tsx script.ts`, reads stdout for results.
 
-**Output:** Steps executed, page in post-reproduction state.
+**Action log:** Each Stagehand call appends an entry to `reproductions/<issue>/action-log.json`:
+```json
+[
+  {"action": "navigate", "instruction": "http://localhost/plane-dev/", "result": {...}, "timestamp": "..."},
+  {"action": "act", "instruction": "click Add Work Item button", "result": {...}, "timestamp": "..."}
+]
+```
+
+**Video:** Playwright records the browser context (`video: 'on'`) throughout DRIVE. Saved to `evidence/video.webm`.
+
+**Output:** Steps executed, page in post-reproduction state, action log on disk.
 
 ### 5. VERIFY
 
 **Input:** Current page state after DRIVE
-**Action:** Screenshot + Claude Code vision judgment.
-- Take screenshot via Stagehand or Playwright
-- Claude Code (the meta-agent) examines the screenshot
-- Judges: "Does this match the expected bug behavior from the oracle spec?"
-- If not reproduced and retries remain → loop back to DRIVE (possibly with adjusted steps)
+**Action:** Screenshot + Claude Code vision judgment (the **oracle**).
+- Take screenshot of current page
+- Claude Code (the brain) examines the screenshot
+- Produces a structured **verdict**:
 
-**Output:** `reproduced: true/false` + evidence screenshots.
+```json
+{
+  "reproduced": true,
+  "confidence": "high",
+  "reasoning": "Screenshot shows a generic 'Something went wrong' toast after entering a 256-char title, instead of a specific validation message about title length.",
+  "evidence_file": "reproductions/9329/evidence/screenshot-after.png"
+}
+```
+
+**Decision:**
+- `reproduced=true` AND `confidence≥medium` → proceed to EMIT
+- Otherwise → **adapt steps** (Claude Code reasons about why it failed, adjusts approach), retry DRIVE (max 5 attempts)
+
+**Output:** Verdict + evidence screenshots.
 
 ### 6. EMIT
 
-**Input:** All data from phases 1–5
+**Input:** All data from phases 1–5 + `action-log.json`
 **Action:** Generate deterministic artifacts:
-1. **`repro-plan.json`** — the structured plan (already created in phase 2, finalized here)
-2. **`repro.spec.ts`** — a Playwright test that replays the exact steps without Stagehand/LLM
-3. **`evidence/`** — screenshots (before/after), video recording, console logs
+1. **`repro-plan.json`** — finalize the structured plan
+2. **`repro.spec.ts`** — Claude Code reads `action-log.json` and translates each Stagehand call into Playwright API equivalents (`page.goto`, `page.click`, `page.fill`, `expect`). Includes login.
+3. **`evidence/`** — screenshots (before/after), `video.webm`, console logs
 4. **`verdict.md`** — human-readable report: issue summary, steps taken, result, confidence
+5. End Stagehand session (`POST /v1/sessions/{id}/end`)
 
 **Output:** All files written to `./reproductions/<issue-number>/`.
+
+### EXIT CONDITIONS
+
+| Condition | When | What happens |
+|-----------|------|-------------|
+| ✅ Success | `reproduced=true, confidence≥medium` | EMIT artifacts, end session, exit |
+| ❌ Max retries | 5 DRIVE→VERIFY cycles failed | Emit partial evidence + "could not reproduce" verdict |
+| 🚨 Fatal error | Stagehand/Plane crash, unrecoverable | Exit with error report |
+| 💰 Budget exceeded | Token/cost limit hit | Safety exit with partial state |
 
 ---
 
@@ -245,6 +289,7 @@ bug-repro-agent/
 ├── reproductions/                    ← output (gitignored)
 │   └── 9329/
 │       ├── repro-plan.json
+│       ├── action-log.json
 │       ├── repro.spec.ts
 │       ├── evidence/
 │       │   ├── screenshot-before.png
@@ -309,13 +354,16 @@ Repeat with bug #9050 if time allows.
 
 | Term | Definition |
 |------|-----------|
-| **Meta-agent** | Claude Code running the /repro skill. The brain. |
-| **Hands** | Stagehand server — executes browser actions, doesn't reason about bugs. |
+| **repro-agent** | The system. Name used everywhere — code, docs, demo. |
+| **Brain** | Claude Code running the /repro skill. Plans, reasons, judges. The only thing that thinks. |
+| **Hands** | Stagehand server — executes browser actions, doesn't reason about bugs. Translates NL → DOM clicks. |
 | **Skill** | `.claude/skills/repro-agent/SKILL.md` — the packaged prompt + instructions. |
 | **/loop** | Grok's autonomous execution mode. The skill runs inside it. |
-| **Phase 1 (Author)** | Agent-driven reproduction. Expensive, once per bug. |
-| **Phase 2 (Replay)** | Deterministic Playwright test. Cheap, N times. |
-| **Oracle** | Verification mechanism. Screenshot + Claude vision judgment. |
-| **Adapter** | Plane-specific knowledge (URLs, creds, nav patterns, API endpoints). |
-| **Artifact bundle** | The output: `repro-plan.json` + `repro.spec.ts` + `evidence/` + `verdict.md`. |
+| **Author (Phase 1)** | Agent-driven reproduction. Expensive, once per bug. |
+| **Replay (Phase 2)** | Deterministic Playwright test. Cheap, N times. |
+| **Oracle** | The VERIFY mechanism. Screenshot + Claude vision → structured verdict `{reproduced, confidence, reasoning}`. |
+| **Adapter** | Plane-specific knowledge (URLs, creds, nav patterns, API endpoints). `lib/plane-adapter.ts`. |
+| **Artifact bundle** | The output: `repro-plan.json` + `repro.spec.ts` + `action-log.json` + `evidence/` + `verdict.md`. |
 | **Seed** | Creating required app state before reproduction (issues, stickies, etc.). |
+| **Action log** | `reproductions/<issue>/action-log.json` — every Stagehand call during DRIVE, used by EMIT to generate `repro.spec.ts`. |
+| **Verdict** | Oracle output: `{ reproduced: bool, confidence: high/medium/low, reasoning: string, evidence_file: path }`. |
