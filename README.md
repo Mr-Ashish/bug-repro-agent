@@ -66,6 +66,23 @@ cp .env.example .env                 # add OPENROUTER_API_KEY
 
 > **Note:** CDP_URL is auto-discovered from Chrome on port 9222. You only need to set it manually if Chrome is on a different port.
 
+## Pre-run environment check
+
+Before running the agent, verify Plane is up and has seed data:
+
+```bash
+# Check if Plane is ready (auth, workspace, projects, states, work items)
+python scripts/seed.py check
+
+# If check fails — populate seed data (idempotent, safe to re-run)
+python scripts/seed.py populate
+```
+
+`seed.py check` exits 0 when ready, 1 when not. `seed.py populate` creates:
+- **SEED project** with identifier `SEED`
+- **5 states** (Backlog, Todo, In Progress, Done, Cancelled)
+- **5 work items** including edge cases (256-char title, special characters, hierarchy parent)
+
 ## Usage
 
 ```bash

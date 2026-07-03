@@ -5,6 +5,37 @@ description: "Reproduce any Plane bug from a GitHub issue URL. Drives a real bro
 
 # repro-agent
 
+## Before running
+
+Before calling drive.py, ensure the environment is ready:
+
+1. **Check infrastructure + seed data:**
+   ```
+   python scripts/seed.py check
+   ```
+   Exit code 0 = ready. Exit code 1 = not ready (read the output to see what's missing).
+
+2. **Populate seed data (if check fails):**
+   ```
+   python scripts/seed.py populate
+   ```
+   Creates a SEED project with work items, states, cycles, modules, and pages.
+   Idempotent — safe to run multiple times. Re-run `check` after to verify.
+
+3. **Verify Chrome:** Ensure Chrome is running with `--remote-debugging-port=9222`.
+   If Chrome is not running, start it:
+   ```
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+   ```
+
+4. **Verify Plane:** Plane must be running at localhost:3000 with backend services healthy.
+   If Plane Docker services are down, start them:
+   ```
+   cd plane && docker compose up -d
+   ```
+
+Only proceed to drive.py after `seed.py check` exits 0.
+
 ## What it does
 
 Given a GitHub issue URL, this agent reproduces the bug in a running local Plane instance.

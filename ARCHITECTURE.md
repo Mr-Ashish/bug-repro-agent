@@ -44,6 +44,7 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 │  Knows: drive.py CLI flags, exit codes, artifact paths          │
 │  Does:  orchestrate scripts, interpret results, retry/chain     │
 │                                                                 │
+│  Pre:   python scripts/seed.py check   (→ populate if needed)   │
 │  Runs:  python scripts/drive.py --issue 9329                    │
 │  Then:  python scripts/post_comment.py --issue 9329             │
 └──────────────────────────┬──────────────────────────────────────┘
@@ -180,29 +181,32 @@ sequenceDiagram
 
 ## Layer Ownership
 
-| Concern | Grok | drive.py | browser-use Agent | post_comment.py |
-|---------|:-----:|:--------:|:-----------------:|:---------------:|
-| User interface | ✅ | | | |
-| Skill knowledge | ✅ | | | |
-| Script orchestration | ✅ | | | |
-| Exit code interpretation | ✅ | | | |
-| Retry decisions | ✅ | | | |
-| CDP auto-discovery | | ✅ | | |
-| Preflight checks | | ✅ | | |
-| Issue fetching (gh) | | ✅ | | |
-| Prompt engineering | | ✅ | | |
-| Agent lifecycle | | ✅ | | |
-| Artifact saving | | ✅ | | |
-| Verdict parsing | | ✅ | | |
-| Crash recovery | | ✅ | | |
-| Bug reasoning | | | ✅ | |
-| Browser navigation | | | ✅ | |
-| Screenshot capture | | | ✅ | |
-| Verdict emission | | | ✅ | |
-| Artifact reading | | | | ✅ |
-| Comment generation | | | | ✅ |
-| Password masking | | | | ✅ |
-| GitHub posting | | | | ✅ |
+| Concern | Grok | seed.py | drive.py | browser-use Agent | post_comment.py |
+|---------|:-----:|:-------:|:--------:|:-----------------:|:---------------:|
+| User interface | ✅ | | | | |
+| Skill knowledge | ✅ | | | | |
+| Script orchestration | ✅ | | | | |
+| Exit code interpretation | ✅ | | | | |
+| Retry decisions | ✅ | | | | |
+| Env readiness check | | ✅ | | | |
+| Seed data population | | ✅ | | | |
+| Plane API auth (session) | | ✅ | | | |
+| CDP auto-discovery | | | ✅ | | |
+| Preflight checks | | | ✅ | | |
+| Issue fetching (gh) | | | ✅ | | |
+| Prompt engineering | | | ✅ | | |
+| Agent lifecycle | | | ✅ | | |
+| Artifact saving | | | ✅ | | |
+| Verdict parsing | | | ✅ | | |
+| Crash recovery | | | ✅ | | |
+| Bug reasoning | | | | ✅ | |
+| Browser navigation | | | | ✅ | |
+| Screenshot capture | | | | ✅ | |
+| Verdict emission | | | | ✅ | |
+| Artifact reading | | | | | ✅ |
+| Comment generation | | | | | ✅ |
+| Password masking | | | | | ✅ |
+| GitHub posting | | | | | ✅ |
 
 ---
 
@@ -267,6 +271,7 @@ Works on any Plane issue. These are good demos — visual and fast:
 bug-repro-agent/
 ├── scripts/
 │   ├── __init__.py                   ← makes scripts/ importable
+│   ├── seed.py                       ← environment readiness checker + seed data populator
 │   ├── drive.py                      ← main reproduction agent (~520 lines)
 │   └── post_comment.py               ← generates + posts GitHub comment
 ├── .claude/skills/repro-agent/
@@ -310,9 +315,12 @@ bug-repro-agent/
 | Term | Definition |
 |------|-----------|
 | **repro-agent** | The system. |
+| **seed.py** | Environment readiness CLI — `check` verifies Plane is ready, `populate` creates seed data. Runs before drive.py. |
 | **drive.py** | The main Python script — fetches issue, runs agent, saves artifacts. |
 | **post_comment.py** | Reads artifacts, builds Markdown comment, posts to GitHub issue. |
 | **browser-use** | Python library — resolves NL task → DOM actions via Playwright. In-process, no server. |
 | **Verdict** | `REPRODUCED`, `NOT_REPRODUCED`, or `INCONCLUSIVE`. Structured line parsed from agent output. |
 | **Artifact bundle** | All output: `issue.json`, `task-prompt.txt`, `action-log.json`, `evidence-*.png`, `verdict.md`, `agent-run.gif`, `conversation.json`, `traces/`, `error.txt`, `github-comment.md`. |
 | **Action log** | `action-log.json` — every agent step (thought, action, result, URL). |
+| **Preflight** | Checks run by drive.py before starting the agent: Chrome reachable, Plane frontend+backend healthy, gh authenticated. |
+| **Seed data** | SEED project with 5 states and 5 work items (including edge cases) created by `seed.py populate`. |

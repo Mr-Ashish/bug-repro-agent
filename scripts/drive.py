@@ -76,13 +76,27 @@ def preflight(cdp_url: str, plane_url: str) -> None:
     except Exception:
         errors.append(f"Chrome CDP not reachable at {cdp_url}")
 
-    # 2. Plane responding?
+    # 2. Plane frontend responding?
     try:
         urllib.request.urlopen(plane_url, timeout=5)
     except Exception:
         errors.append(f"Plane not responding at {plane_url}")
 
-    # 3. gh CLI authenticated?
+    # 3. Plane API backend healthy? (frontend can return 200 while backend is dead)
+    try:
+        api_url = f"{plane_url.rstrip('/')}/api/users/me/"
+        urllib.request.urlopen(api_url, timeout=5)
+    except urllib.error.HTTPError as e:
+        # 401/403 = API is alive but we're not authenticated — that's fine
+        if e.code not in (401, 403):
+            errors.append(f"Plane API unhealthy at {plane_url} (HTTP {e.code})")
+    except Exception:
+        errors.append(
+            f"Plane API not reachable at {plane_url} "
+            f"(frontend responds but backend may be down)"
+        )
+
+    # 4. gh CLI authenticated?
     try:
         subprocess.run(
             ["gh", "auth", "status"],
@@ -426,24 +440,28 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         agent_error = f"{type(e).__name__}: {e}"
         print(f"\n💀 Agent run failed: {agent_error}")
     finally:
+        # ── Save artifacts FIRST (before closing browser) ─────
+        # browser.close() can hang if Chrome is unresponsive.
+        # Artifacts come from the in-memory history object, so
+        # saving them doesn't need a live browser connection.
+        print("\n── Saving artifacts ──")
+        if history and history.history:
+            save_artifacts(history, issue, repro_dir)
+        else:
+            print("  ⚠️ No agent history — saving error report only")
+
+        if agent_error:
+            (repro_dir / "error.txt").write_text(
+                f"Agent error: {agent_error}\n"
+                f"Time: {datetime.now().isoformat()}\n"
+            )
+            print(f"  💀 Error saved: {repro_dir}/error.txt")
+
+        # ── THEN close browser (with timeout) ─────────────────
         try:
-            await browser.close()
+            await asyncio.wait_for(browser.close(), timeout=10)
         except Exception:
             pass
-
-    # ── Save artifacts (even on crash) ────────────────────────
-    print("\n── Saving artifacts ──")
-    if history and history.history:
-        save_artifacts(history, issue, repro_dir)
-    else:
-        print("  ⚠️ No agent history — saving error report only")
-
-    if agent_error:
-        (repro_dir / "error.txt").write_text(
-            f"Agent error: {agent_error}\n"
-            f"Time: {datetime.now().isoformat()}\n"
-        )
-        print(f"  💀 Error saved: {repro_dir}/error.txt")
 
     # ── Summary ───────────────────────────────────────────────
     if history and history.history:
