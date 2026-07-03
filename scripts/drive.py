@@ -179,11 +179,13 @@ URL: {url}
 - **Modules:** left sidebar → "Modules"
 - **Pages:** left sidebar → "Pages"
 - **Stickies:** icon in the bottom-right floating toolbar (sticky note icon)
-- **Settings:** left sidebar bottom → gear icon
 - **Create issue:** "Add work item" button (top-right of issues list) or press 'C'
 - **Sub-issues:** open an issue → "Sub-work items" section below description
 - **Filters/Views:** toolbar above issue list → "Filters" dropdown
+- **Project Settings:** in left sidebar, scroll down to "Work Structure" section, or look for a gear icon near the project name. The settings page has sub-sections: General, Members, Features (Cycles, Modules, Views, Pages, Intake), Work Structure (States, Labels, Estimates), Execution (Automations).
+- **States settings:** Project Settings → left sidebar → "States" under "Work Structure"
 Note: "Work Items" is Plane's term for issues. The left sidebar shows: Work Items, Cycles, Modules, Pages, Views.
+Note: If you cannot find a navigation element, try using the URL bar directly — Plane URLs follow the pattern: {plane_url}/{workspace}/projects/<project-id>/settings/ for project settings.
 
 ## Required output format
 End your final message with EXACTLY one of these verdict lines:
@@ -394,7 +396,8 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
     profile = BrowserProfile(
         cdp_url=cdp_url,
         headless=False,
-        viewport={"width": 1280, "height": 720},
+        viewport={"width": 1920, "height": 1080},
+        screen={"width": 1920, "height": 1080},
         highlight_elements=True,
         record_video_dir=str(repro_dir),
     )
