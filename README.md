@@ -112,10 +112,6 @@ npx playwright test reproductions/9329/repro.spec.ts
 /repro https://github.com/makeplane/plane/issues/9329
 ```
 
-## Known issues
-
-See [ISSUES.md](./ISSUES.md) for every problem encountered during development, root causes, and fixes.
-
 ## License
 
 MIT

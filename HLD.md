@@ -257,11 +257,8 @@ bug-repro-agent/
 │       │   └── full-trace.json       ← complete agent run trace
 │       ├── evidence-*.png
 │       └── verdict.md
-├── DESIGN.md                         ← original design (to be updated)
+├── DESIGN.md                         ← core design principle
 ├── HLD.md                            ← this file
-├── HACKATHON_CONTEXT.md
-├── ISSUE_ANALYSIS.md
-├── GRILLING.md
 ├── package.json
 ├── tsconfig.json
 └── plane/                            ← Plane clone (gitignored)

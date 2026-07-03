@@ -20,3 +20,7 @@ reproductions/*/traces/step-*-navigate.json
 
 # Playwright test output (videos, traces, screenshots from replay)
 test-results/
+
+# IDE / tool artifacts
+.lavish/
+.playwright-mcp/

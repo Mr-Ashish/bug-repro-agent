@@ -2,7 +2,7 @@
 """
 browser-use bug reproduction driver.
 
-Replaces the old Stagehand TypeScript drivers. Single script handles all issues.
+Single script handles all issues via browser-use agent + Claude Sonnet 4.
 Usage: python scripts/drive.py --issue 9329
 """
 import asyncio
