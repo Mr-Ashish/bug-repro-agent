@@ -1,0 +1,26 @@
+{
+  "step": 11,
+  "action": "extract",
+  "instruction": "Are sub-tasks now visible under the expanded parent task? List what you see.",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/aa7174b9-8644-40bb-b78e-3f367c3887ca/extract",
+    "body": {
+      "instruction": "Are sub-tasks now visible under the expanded parent task? List what you see."
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "extraction": "- SEED-31: Test normal title\n- SEED-30: External: Mobile app crash on notifications\n- SEED-29: External: API returns 500 on large payloads\n- SEED-28: External: UI glitch on Safari\n- SEED-27: External: Feature request — bulk editing\n- SEED-26: External: User reports login timeout\n- SEED-25: Add audit log tracking\n- SEED-24: Create API rate limiting\n- SEED-23: Implement Gantt chart view\n- SEED-22: Build reporting and charts\n- SEED-21: Add webhook integration support\n- SEED-20: Create custom fields system\n- SEED-19: Implement issue templates\n- SEED-18: Build bulk issue operations\n- SEED-17: Add keyboard shortcuts\n- SEED-16: Create mobile-responsive layouts\n- SEED-15: Implement issue import/export\n- SEED-14: Add dark mode theme support\n- SEED-13: Build activity timeline component\n- SEED-12: Create workspace invitation flow\n\nEach of these entries represents an expanded parent task with its respective sub-task details."
+        },
+        "actionId": "ef4a7811-0141-4863-9fb9-deca08e6ff2a"
+      }
+    }
+  },
+  "result": "- SEED-31: Test normal title\n- SEED-30: External: Mobile app crash on notifications\n- SEED-29: External: API returns 500 on large payloads\n- SEED-28: External: UI glitch on Safari\n- SEED-27: External: Feature request — bulk editing\n- SEED-26: External: User reports login timeout\n- SEED-25: Add audit",
+  "durationMs": 5517,
+  "ts": "2026-07-03T18:19:14.513Z"
+}

@@ -1,0 +1,36 @@
+{
+  "step": 4,
+  "action": "act",
+  "instruction": "Click the Continue button",
+  "request": {
+    "url": "http://localhost:3100/v1/sessions/5e7e461b-a5be-48fb-8958-8d1195d1265b/act",
+    "body": {
+      "input": "Click the Continue button"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "result": {
+          "success": true,
+          "message": "Action [click] performed successfully on selector: xpath=/html[1]/body[1]/div[4]/main[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/input[1]",
+          "actionDescription": "Button labeled 'Continue'",
+          "actions": [
+            {
+              "selector": "xpath=/html[1]/body[1]/div[4]/main[1]/div[1]/div[1]/div[2]/div[1]/div[1]/div[1]/input[1]",
+              "description": "Button labeled 'Continue'",
+              "method": "click",
+              "arguments": []
+            }
+          ]
+        },
+        "actionId": "e03cae6a-c1d3-4773-8d1c-5fee7fac86f0"
+      }
+    }
+  },
+  "result": "ok",
+  "durationMs": 2007,
+  "ts": "2026-07-03T18:15:56.503Z"
+}
