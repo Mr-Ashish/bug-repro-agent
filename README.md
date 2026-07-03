@@ -13,8 +13,8 @@ Built for the **Browser-Use Hackathon** (July 4, 2026, Bengaluru).
 1. **Reads** the GitHub issue, extracts steps to reproduce
 2. **Plans** the reproduction — classifies bug type, structures steps
 3. **Seeds** the app with required data state
-4. **Drives** the browser via [Stagehand](https://github.com/browserbase/stagehand) to execute the steps
-5. **Verifies** the bug reproduced (screenshot + vision judgment)
+4. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) (Python agent on Playwright) to execute the steps
+5. **Verifies** the bug reproduced (agent result analysis)
 6. **Emits** a deterministic Playwright test + evidence artifacts
 
 Then replay forever without the agent:
@@ -27,12 +27,12 @@ npx playwright test reproductions/9329/repro.spec.ts
 
 ```
 Brain:  Claude Code (Grok skill + /loop) — plans, reasons, judges
-Hands:  Stagehand server-v3 (GPT-4o via OpenRouter) — clicks, types, observes
+Hands:  browser-use (Python, in-process) — Claude Sonnet 4 via OpenRouter → Playwright
 Target: Plane (local docker-compose) — the app under test
 ```
 
-**Phase 1 (Author):** Agent reproduces the bug. Expensive, once.
-**Phase 2 (Replay):** Emitted Playwright script runs. Cheap, N times.
+**Phase 1 (Author):** Python `drive.py` runs browser-use agent. Expensive, once.
+**Phase 2 (Replay):** Emitted Playwright `repro.spec.ts` runs. Cheap, N times.
 
 See [HLD.md](./HLD.md) for the full locked architecture.
 
@@ -41,14 +41,13 @@ See [HLD.md](./HLD.md) for the full locked architecture.
 ```
 reproductions/9329/
 ├── repro-plan.json          # structured reproduction plan
-├── action-log.json          # every browser action (step, instruction, result, timing)
+├── action-log.json          # every agent step (thought, actions, result)
 ├── repro.spec.ts            # deterministic Playwright test
-├── traces/                  # per-step Stagehand introspection
-│   ├── step-01-session.json # full request + response + timing
-│   ├── step-03-act.json
-│   ├── step-13-extract.json
-│   └── ...
-├── evidence-*.png           # screenshots
+├── traces/
+│   └── full-trace.json      # complete browser-use agent history
+├── conversation.json        # full LLM conversation log
+├── evidence-*.png           # screenshots at each step
+├── agent-run.gif            # animated GIF of browser session
 └── verdict.md               # agent's judgment + confidence
 ```
 
@@ -63,29 +62,48 @@ reproductions/9329/
 ## Prerequisites
 
 - [Plane](https://github.com/makeplane/plane) running locally via `docker-compose-local.yml` on `:3000`
-- [Stagehand server-v3](https://github.com/browserbase/stagehand) running on `:3100`
 - Chrome with `--remote-debugging-port=9222`
-- Node.js 20+
+- Python 3.11+
+- Node.js 20+ (for Playwright replay)
 - OpenRouter API key
 - `gh` CLI authenticated
 
 ## Setup
 
 ```bash
+# Python (browser-use agent)
+pip install browser-use python-dotenv
+
+# Node.js (Playwright replay)
 npm install
-cp .env.example .env  # add your API keys + CDP URL
+
+# Config
+cp .env.example .env  # add your OPENROUTER_API_KEY + CDP_URL
 ```
 
 ## Run the drive script
 
 ```bash
-npm run drive
-# or: npx tsx scripts/drive-v3.ts
+# Reproduce issue #9329
+python scripts/drive.py --issue 9329
+
+# Or via npm:
+npm run drive:9329
+
+# Other issues:
+npm run drive:9050
+npm run drive:9124
 ```
 
-Traces go to `reproductions/9329/traces/`. Inspect any step:
+Artifacts go to `reproductions/9329/`. Inspect the agent trace:
 ```bash
-cat reproductions/9329/traces/step-13-extract.json | jq .response.body
+cat reproductions/9329/action-log.json | python -m json.tool
+```
+
+## Replay (no agent, no LLM)
+
+```bash
+npx playwright test reproductions/9329/repro.spec.ts
 ```
 
 ## Run as a skill (from Grok)

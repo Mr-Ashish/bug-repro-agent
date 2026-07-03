@@ -1,0 +1,12 @@
+[project]
+name = "repro-agent"
+version = "0.1.0"
+description = "Bug reproduction agent for Plane — browser-use + Playwright"
+requires-python = ">=3.11"
+dependencies = [
+    "browser-use>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+drive = "scripts.drive:cli"
