@@ -555,11 +555,16 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         # ── Generate Playwright test ──────────────────────────
         print("\n── Generating Playwright test ──")
         try:
-            from generate_playwright import generate_test
-            test_code = generate_test(str(issue["number"]), repro_dir)
-            test_path = repro_dir / f"test_{issue['number']}.py"
-            test_path.write_text(test_code)
-            print(f"  🎭 Playwright test: {test_path}")
+            gen_result = subprocess.run(
+                ["python", "scripts/generate_playwright.py",
+                 "--issue", str(issue["number"]),
+                 "--dir", str(repro_dir)],
+                capture_output=True, text=True,
+            )
+            if gen_result.returncode == 0:
+                print(f"  🎭 {gen_result.stdout.strip()}")
+            else:
+                print(f"  ⚠️ Playwright gen failed: {gen_result.stderr.strip()}")
         except Exception as e:
             print(f"  ⚠️ Could not generate Playwright test: {e}")
 

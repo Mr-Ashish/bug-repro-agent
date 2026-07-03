@@ -72,19 +72,30 @@ This helps you understand where in the app the bug lives, so you can provide bet
 ## What it does
 
 Given a GitHub issue URL, this agent reproduces the bug in a running local Plane instance.
-It fetches the issue, drives a browser to execute the reproduction steps, and saves evidence.
+The full pipeline: **fetch → reproduce → generate Playwright test → post to GitHub**.
 
-```
-python scripts/drive.py --issue 9329
+```bash
+# Standard run (reproduce + generate Playwright test)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329
-python scripts/drive.py --issue 9329 --post            # reproduce AND post result to GitHub issue
+
+# Full E2E (reproduce + Playwright test + post verdict to GitHub issue)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
+
+# Other options
 python scripts/drive.py --issue 9329 --dry-run          # prompt only, no agent run
 python scripts/drive.py --issue 9329 --timeout 600      # custom timeout
 ```
 
-The script handles everything: fetch the issue via `gh`, build the prompt, run the browser-use agent, parse the verdict, save artifacts, and optionally post the result back to the GitHub issue as a comment.
-
 **Always use `--post` for demo runs** so the verdict appears directly on the GitHub issue.
+
+After drive.py completes, review the generated Playwright test:
+```bash
+# The test is auto-generated at reproductions/<issue>/test_<issue>.py
+cat reproductions/9329/test_9329.py
+
+# Run it (selectors may need refinement for full replay)
+pytest reproductions/9329/test_9329.py -v --headed
+```
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
@@ -98,10 +109,12 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 ## How it works
 
 1. `gh issue view` fetches the issue title + body
-2. A generic prompt template injects the issue content + Plane login credentials
+2. A principles-based prompt template injects the issue content + Plane login credentials
 3. browser-use agent drives Chrome via CDP to reproduce the steps described in the issue
 4. The agent ends with a structured verdict line: `VERDICT: REPRODUCED | <summary>`
 5. `drive.py` parses that line, saves all artifacts to `reproductions/<issue-number>/`
+6. A Playwright regression test is auto-generated from the action log
+7. With `--post`, the verdict is posted as a comment on the GitHub issue
 
 ## Constraints
 
