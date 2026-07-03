@@ -23,7 +23,7 @@ export class StagehandClient {
   sessionId: string | null = null;
 
   constructor(
-    baseUrl: string = process.env.STAGEHAND_URL || "http://localhost:3000",
+    baseUrl: string = process.env.STAGEHAND_URL || "http://localhost:3100",
     modelApiKey: string = process.env.OPENROUTER_API_KEY || ""
   ) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
@@ -37,7 +37,7 @@ export class StagehandClient {
 
   async startSession(
     cdpUrl: string,
-    modelName: string = process.env.STAGEHAND_MODEL || "google/gemini-2.5-flash-preview"
+    modelName: string = process.env.STAGEHAND_SESSION_MODEL || "gpt-4o"
   ): Promise<StagehandResult> {
     const payload = {
       modelName,

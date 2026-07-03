@@ -1,7 +1,9 @@
 /**
- * DRIVE v6: Stagehand-only repro of Plane issue #9329
+ * Stagehand-only bug reproduction driver.
  *
- * - Model: anthropic/claude-sonnet-4 (via OpenRouter)
+ * - Model: configurable via STAGEHAND_SESSION_MODEL env var (default: gpt-4o)
+ *   Must support structured output (response_format: json_schema).
+ *   Claude via OpenRouter does NOT work — Stagehand can't parse the response.
  * - Every browser action goes through Stagehand REST API
  * - Full trace logging: every request + response saved for introspection
  *
@@ -12,7 +14,7 @@ import { writeFileSync, mkdirSync } from "fs";
 
 const BASE = process.env.STAGEHAND_URL || "http://localhost:3100";
 const CDP_URL = process.env.CDP_URL!;
-const MODEL = process.env.STAGEHAND_SESSION_MODEL || "anthropic/claude-sonnet-4";
+const MODEL = process.env.STAGEHAND_SESSION_MODEL || "gpt-4o";
 const PLANE_URL = process.env.PLANE_URL || "http://localhost:3000";
 const PLANE_EMAIL = process.env.PLANE_EMAIL || "admin@admin.com";
 const PLANE_PASSWORD = process.env.PLANE_PASSWORD || "qweQWE123!@#";
@@ -92,18 +94,21 @@ async function tracedPost(
   const durationMs = Date.now() - t0;
 
   // Build human-readable result
+  // IMPORTANT: action-specific formatting MUST come before the generic success check,
+  // otherwise extract/observe results just show "ok" instead of actual content.
   let result: string;
   if (action === "session") {
     result = `session_id=${json?.data?.sessionId ?? "UNKNOWN"}`;
-  } else if (json?.success === true) {
-    result = "ok";
   } else if (json?.success === false) {
     result = `FAIL: ${json?.message ?? JSON.stringify(json).slice(0, 200)}`;
   } else if (action === "extract") {
-    result = String(json?.data?.result?.extraction ?? JSON.stringify(json?.data?.result ?? json?.data ?? json).slice(0, 300));
+    const text = json?.data?.result?.extraction;
+    result = text ? String(text).slice(0, 300) : JSON.stringify(json?.data?.result ?? json?.data ?? json).slice(0, 300);
   } else if (action === "observe") {
     const items = json?.data?.result ?? [];
     result = items.map((i: any) => i.description).join(" | ").slice(0, 300) || "(none)";
+  } else if (json?.success === true) {
+    result = "ok";
   } else {
     result = JSON.stringify(json).slice(0, 200);
   }
@@ -175,7 +180,7 @@ async function main() {
   mkdirSync(REPRO_DIR, { recursive: true });
 
   console.log("╔══════════════════════════════════════════════╗");
-  console.log("║  DRIVE v6 — Stagehand-only bug repro        ║");
+  console.log("║  DRIVE — Stagehand-only bug repro            ║");
   console.log("╚══════════════════════════════════════════════╝");
   console.log(`  model    : ${MODEL}`);
   console.log(`  stagehand: ${BASE}`);
@@ -261,7 +266,7 @@ async function main() {
   console.log("╚══════════════════════════════════════════════╝");
 
   saveTraces();
-  console.log("\n✅ DRIVE v6 COMPLETE");
+  console.log("\n✅ DRIVE COMPLETE");
 }
 
 main().catch((e) => {

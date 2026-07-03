@@ -27,7 +27,7 @@ npx playwright test reproductions/9329/repro.spec.ts
 
 ```
 Brain:  Claude Code (Grok skill + /loop) — plans, reasons, judges
-Hands:  Stagehand server-v3 (Gemini Flash) — clicks, types, observes
+Hands:  Stagehand server-v3 (GPT-4o via OpenRouter) — clicks, types, observes
 Target: Plane (local docker-compose) — the app under test
 ```
 
@@ -41,13 +41,14 @@ See [HLD.md](./HLD.md) for the full locked architecture.
 ```
 reproductions/9329/
 ├── repro-plan.json          # structured reproduction plan
-├── action-log.json          # every browser action taken
+├── action-log.json          # every browser action (step, instruction, result, timing)
 ├── repro.spec.ts            # deterministic Playwright test
-├── evidence/
-│   ├── screenshot-before.png
-│   ├── screenshot-after.png
-│   ├── video.webm
-│   └── console.log
+├── traces/                  # per-step Stagehand introspection
+│   ├── step-01-session.json # full request + response + timing
+│   ├── step-03-act.json
+│   ├── step-13-extract.json
+│   └── ...
+├── evidence-*.png           # screenshots
 └── verdict.md               # agent's judgment + confidence
 ```
 
@@ -61,25 +62,41 @@ reproductions/9329/
 
 ## Prerequisites
 
-- [Plane](https://github.com/makeplane/plane) running locally via `docker-compose-local.yml`
-- [Stagehand server-v3](https://github.com/browserbase/stagehand) running on `localhost:3000`
+- [Plane](https://github.com/makeplane/plane) running locally via `docker-compose-local.yml` on `:3000`
+- [Stagehand server-v3](https://github.com/browserbase/stagehand) running on `:3100`
+- Chrome with `--remote-debugging-port=9222`
 - Node.js 20+
+- OpenRouter API key
 - `gh` CLI authenticated
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env  # add your API keys
+cp .env.example .env  # add your API keys + CDP URL
 ```
 
-## Usage
+## Run the drive script
 
-From a Grok session in this repo:
+```bash
+npm run drive
+# or: npx tsx scripts/drive-v3.ts
+```
+
+Traces go to `reproductions/9329/traces/`. Inspect any step:
+```bash
+cat reproductions/9329/traces/step-13-extract.json | jq .response.body
+```
+
+## Run as a skill (from Grok)
 
 ```
 /repro https://github.com/makeplane/plane/issues/9329
 ```
+
+## Known issues
+
+See [ISSUES.md](./ISSUES.md) for every problem encountered during development, root causes, and fixes.
 
 ## License
 

@@ -4,6 +4,7 @@
   "description": "Autonomous bug reproduction agent — GitHub issue to Playwright test",
   "type": "module",
   "scripts": {
+    "drive": "npx tsx scripts/drive-v3.ts",
     "replay": "npx playwright test",
     "typecheck": "tsc --noEmit"
   },

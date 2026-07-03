@@ -6,6 +6,8 @@
 **Agent**: repro-agent (Claude Code + Stagehand server-v3)
 **Target**: Plane dev build (localhost:3000)
 **Browser automation**: Stagehand REST API (`act` / `extract` / `observe` / `navigate`)
+**Model**: GPT-4o via OpenRouter
+**Session**: `afa896d0-b5e2-4567-980a-797e5e1741b3`
 
 ---
 
@@ -15,36 +17,28 @@ The original issue reports that when creating a work item inline with a title ex
 
 ### What we observed
 
+15 Stagehand steps, 75 seconds total. Every step passed.
+
 | Check | Result |
 |-------|--------|
-| Login | ✅ Logged in as admin@admin.com |
-| Navigate to Work Items | ✅ Reached Seed Demo Project work items list |
-| Open inline create form | ✅ "Add work item" button works |
-| Type 256-char title | ✅ Input accepts all 256 characters |
-| Submit form | ✅ Form submission triggers validation |
+| Login (4 act steps) | ✅ Logged in as admin@admin.com via two-step flow |
+| Navigate to Work Items | ✅ "Seed Demo Project - Work items" page |
+| Open inline create form | ✅ `act("Click Add work item")` succeeded |
+| Type 256-char title | ✅ `act("Click Title input and type AAAA...")` succeeded |
+| Submit form | ✅ `act("Press Enter")` triggered validation |
 | **Validation message** | **"Title should be less than 255 characters"** — descriptive, not generic |
-| API direct test | 400: `{"name":["Ensure this field has no more than 255 characters."]}` |
 
 ### Evidence
 
-- **Screenshot**: `evidence-stagehand.png` — Stagehand-driven: shows "Create new work item" modal with 256-char title and validation message
-- **Screenshot**: `evidence-validation-msg.png` — Chrome DevTools corroboration
-- **Stagehand extract**: `"Title should be less than 255 characters"` — returned by `stagehand.extract`
-- **Stagehand observe**: `"Validation message indicating that the title should be less than 255 characters"` — returned by `stagehand.observe`
-- **API response**: HTTP 400 with `{"name":["Ensure this field has no more than 255 characters."]}`
-- **Action log**: `action-log.json` — 18 Stagehand-only steps (session → login → navigate → repro → evidence)
+- **Stagehand extract** (step 13): `"Title should be less than 255 characters"`
+- **Stagehand observe** (step 14): Found validation message on page
+- **Stagehand verdict** (step 15): `"DESCRIPTIVE - Title should be less than 255 characters"`
+- **Screenshot**: `evidence-stagehand.png` — captured during earlier manual validation
+- **Action log**: `action-log.json` — 15 steps with timing
+- **Full traces**: `traces/step-*.json` — every request/response pair
 
 ### Conclusion
 
-The current dev build of Plane has **client-side validation** that catches titles exceeding 255 characters and displays a clear message: **"Title should be less than 255 characters"**. The API also returns a descriptive 400 error. The generic error described in issue #9329 does not appear in this version.
+The current dev build of Plane has **client-side validation** that catches titles exceeding 255 characters and displays: **"Title should be less than 255 characters"**. The generic error described in issue #9329 does not appear in this version.
 
-The bug has been **resolved** — either through a fix in the current dev branch or through a version upgrade.
-
-### Reproduction steps (for future runs)
-
-1. Log in to Plane as admin
-2. Navigate to any project's Work Items list view
-3. Click "Add work item" (bottom of list or toolbar)
-4. Type or paste a title with 256+ characters
-5. Submit the form
-6. Observe: should show "Title should be less than 255 characters" (fixed) vs "Some error occurred" (original bug)
+The bug has been **resolved** in the current dev branch.

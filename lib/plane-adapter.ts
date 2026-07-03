@@ -5,7 +5,7 @@
 
 export const PlaneAdapter = {
   // ── Connection ─────────────────────────────────────────────
-  baseUrl: process.env.PLANE_URL || "http://localhost",
+  baseUrl: process.env.PLANE_URL || "http://localhost:3000",
   email: process.env.PLANE_EMAIL || "admin@admin.com",
   password: process.env.PLANE_PASSWORD || "qweQWE123!@#",
   workspace: process.env.PLANE_WORKSPACE || "plane-dev",

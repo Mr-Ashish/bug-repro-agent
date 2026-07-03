@@ -132,11 +132,13 @@ export function generateReproSpec(issueNumber: number): string {
  * No Stagehand, no LLM — pure Playwright.
  */
 test('reproduce #${plan.issue.number}: ${plan.issue.title}', async ({ page }) => {
-  // Login
+  // Login — Plane uses a two-step flow: email → Continue → password → Go to workspace
   await page.goto('${PlaneAdapter.loginUrl}');
   await page.fill('input[name="email"]', '${PlaneAdapter.email}');
-  await page.fill('input[name="password"]', '${PlaneAdapter.password}');
-  await page.click('button[type="submit"]');
+  await page.click('button:has-text("Continue")');
+  await page.waitForSelector('input[type="password"]', { timeout: 10000 });
+  await page.fill('input[type="password"]', '${PlaneAdapter.password}');
+  await page.click('button:has-text("Go to workspace")');
   await page.waitForURL('**/${PlaneAdapter.workspace}/**');
 
   // Reproduction steps
