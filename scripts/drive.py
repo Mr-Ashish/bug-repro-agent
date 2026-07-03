@@ -420,7 +420,7 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
                     await ws.send(_json.dumps({
                         "id": 2,
                         "method": "Browser.setWindowBounds",
-                        "params": {"windowId": window_id, "bounds": {"windowState": "maximized"}}
+                        "params": {"windowId": window_id, "bounds": {"windowState": "fullscreen"}}
                     }))
                     await ws.recv()
                     print("🖥️  Chrome window maximized")
