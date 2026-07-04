@@ -89,11 +89,28 @@ def read_playwright_test(repro_dir: Path, issue_number: str) -> str:
 # ── Image upload via git ─────────────────────────────────────
 
 
-def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
-    """Commit and push GIF + key evidence screenshot, return raw URLs.
+def _pick_best_evidence(repro_dir: Path) -> Path | None:
+    """Pick the best evidence screenshot — the one most likely showing the bug.
 
-    Returns dict with optional 'gif' and 'screenshot' keys containing
-    raw.githubusercontent.com URLs.
+    Strategy: the last screenshot is often from the 'done' step (agent
+    reporting its verdict), which may just show the page after the error
+    toast has disappeared. The second-to-last is usually the actual bug
+    evidence (e.g. the error toast visible). If only one exists, use it.
+    """
+    evidence_files = sorted(repro_dir.glob("evidence-*.png"))
+    if not evidence_files:
+        return None
+    # Prefer second-to-last (the bug moment), fall back to last
+    if len(evidence_files) >= 2:
+        return evidence_files[-2]
+    return evidence_files[-1]
+
+
+def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
+    """Commit and push GIF, video, + key evidence screenshot, return raw URLs.
+
+    Returns dict with optional 'gif', 'video', and 'screenshot' keys
+    containing raw.githubusercontent.com URLs.
     """
     urls = {}
     files_to_add = []
@@ -107,19 +124,28 @@ def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
             f"reproductions/{issue_number}/agent-run.gif"
         )
 
-    # Find best evidence screenshot (last non-empty one)
-    evidence_files = sorted(repro_dir.glob("evidence-*.png"))
-    if evidence_files:
-        best = evidence_files[-1]  # Last screenshot is usually the bug evidence
-        if best.stat().st_size > 0:
-            files_to_add.append(str(best))
-            urls["screenshot"] = (
+    # Find video (.mp4)
+    mp4_files = sorted(repro_dir.glob("*.mp4"))
+    if mp4_files:
+        video = mp4_files[-1]
+        if video.stat().st_size > 1000:  # skip empty/placeholder videos
+            files_to_add.append(str(video))
+            urls["video"] = (
                 f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
-                f"reproductions/{issue_number}/{best.name}"
+                f"reproductions/{issue_number}/{video.name}"
             )
 
+    # Find best evidence screenshot (second-to-last = bug moment)
+    best = _pick_best_evidence(repro_dir)
+    if best and best.stat().st_size > 0:
+        files_to_add.append(str(best))
+        urls["screenshot"] = (
+            f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
+            f"reproductions/{issue_number}/{best.name}"
+        )
+
     if not files_to_add:
-        print("  ⚠️ No GIF or screenshots to upload")
+        print("  ⚠️ No GIF, video, or screenshots to upload")
         return urls
 
     # Git add + commit + push
@@ -276,9 +302,17 @@ def build_comment(
     parts.append(f"**Run time:** {verdict.get('duration', '?')}  ·  **Steps:** {verdict.get('steps', '?')}")
     parts.append("")
 
-    # ── GIF
+    # ── Video (preferred over GIF — shows the full session with timing)
+    video_url = image_urls.get("video")
     gif_url = image_urls.get("gif")
-    if gif_url:
+    if video_url:
+        parts.append("---\n")
+        parts.append("#### 🎬 Agent Run (Video)\n")
+        parts.append(f"[▶️ Watch full reproduction video]({video_url})\n")
+        if gif_url:
+            parts.append(f"![agent-run]({gif_url})\n")
+        parts.append("> Full autonomous browser session — login, navigation, reproduction, and bug observation.\n")
+    elif gif_url:
         parts.append("---\n")
         parts.append("#### 🎬 Agent Run\n")
         parts.append(f"![agent-run]({gif_url})\n")
@@ -310,12 +344,13 @@ def build_comment(
             parts.append(f"\n*...and {len(steps) - 25} more steps (see full action log)*\n")
         parts.append("")
 
-    # ── Evidence screenshot
+    # ── Evidence screenshot (the bug moment — shows the actual error/state)
     screenshot_url = image_urls.get("screenshot")
     if screenshot_url:
         parts.append("---\n")
-        parts.append("#### 🖼️ Evidence\n")
-        parts.append(f"![evidence]({screenshot_url})\n")
+        parts.append("#### 🖼️ Bug Evidence\n")
+        parts.append(f"![bug-evidence]({screenshot_url})\n")
+        parts.append("> Screenshot captured at the moment the bug manifested.\n")
 
     # ── Regression test
     if playwright_test:
@@ -387,9 +422,8 @@ def main():
                 f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
                 f"reproductions/{args.issue}/agent-run.gif"
             )
-        evidence_files = sorted(repro_dir.glob("evidence-*.png"))
-        if evidence_files:
-            best = evidence_files[-1]
+        best = _pick_best_evidence(repro_dir)
+        if best:
             image_urls["screenshot"] = (
                 f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
                 f"reproductions/{args.issue}/{best.name}"
