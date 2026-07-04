@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-Post a reproduction report as a GitHub issue comment.
+Post a rich reproduction report as a GitHub issue comment.
 
-Reads artifacts from reproductions/<issue>/, generates a rich Markdown
-comment, and posts it via `gh issue comment`.
+Reads artifacts from reproductions/<issue>/, uploads images via git push
+to get raw.githubusercontent.com URLs, generates a rich Markdown comment
+with GIF, step traces, evidence screenshots, and regression test, then
+posts it via `gh issue comment`.
 
 Usage:
     python scripts/post_comment.py --issue 9329
@@ -23,6 +25,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_REPO = os.getenv("GITHUB_REPO", "makeplane/plane")
+AGENT_REPO = os.getenv("AGENT_REPO", "Mr-Ashish/bug-repro-agent")
+AGENT_BRANCH = os.getenv("AGENT_BRANCH", "main")
 PLANE_PASSWORD = os.getenv("PLANE_PASSWORD", "")
 
 
@@ -38,17 +42,14 @@ def read_verdict(repro_dir: Path) -> dict:
     text = verdict_path.read_text()
     info = {"raw": text, "status": "UNKNOWN", "summary": ""}
 
-    # Parse status line
     m = re.search(r"\*\*Status:\*\*\s*(.+)", text)
     if m:
         info["status"] = m.group(1).strip()
 
-    # Parse summary
     m = re.search(r"\*\*Summary:\*\*\s*(.+)", text)
     if m:
         info["summary"] = m.group(1).strip()
 
-    # Parse stats
     m = re.search(r"- Steps:\s*(\d+)", text)
     info["steps"] = m.group(1) if m else "?"
 
@@ -72,22 +73,92 @@ def read_action_log(repro_dir: Path) -> list[dict]:
         return []
 
 
-def read_image_urls(repro_dir: Path) -> dict:
-    """Read optional image-urls.json for pre-uploaded GIF/screenshot URLs."""
-    urls_path = repro_dir / "image-urls.json"
-    if not urls_path.exists():
-        return {}
+def read_playwright_test(repro_dir: Path, issue_number: str) -> str:
+    """Read the auto-generated Playwright test, if it exists."""
+    test_path = repro_dir / f"test_{issue_number}.py"
+    if not test_path.exists():
+        return ""
+    text = test_path.read_text()
+    # Truncate to keep comment readable
+    lines = text.splitlines()
+    if len(lines) > 60:
+        return "\n".join(lines[:60]) + f"\n# ... ({len(lines) - 60} more lines)"
+    return text
+
+
+# ── Image upload via git ─────────────────────────────────────
+
+
+def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
+    """Commit and push GIF + key evidence screenshot, return raw URLs.
+
+    Returns dict with optional 'gif' and 'screenshot' keys containing
+    raw.githubusercontent.com URLs.
+    """
+    urls = {}
+    files_to_add = []
+
+    # Find GIF
+    gif_path = repro_dir / "agent-run.gif"
+    if gif_path.exists() and gif_path.stat().st_size > 0:
+        files_to_add.append(str(gif_path))
+        urls["gif"] = (
+            f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
+            f"reproductions/{issue_number}/agent-run.gif"
+        )
+
+    # Find best evidence screenshot (last non-empty one)
+    evidence_files = sorted(repro_dir.glob("evidence-*.png"))
+    if evidence_files:
+        best = evidence_files[-1]  # Last screenshot is usually the bug evidence
+        if best.stat().st_size > 0:
+            files_to_add.append(str(best))
+            urls["screenshot"] = (
+                f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
+                f"reproductions/{issue_number}/{best.name}"
+            )
+
+    if not files_to_add:
+        print("  ⚠️ No GIF or screenshots to upload")
+        return urls
+
+    # Git add + commit + push
     try:
-        return json.loads(urls_path.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
+        subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"repro: #{issue_number} artifacts (GIF + evidence)"],
+            check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "push"],
+            check=True, capture_output=True, timeout=60,
+        )
+        print(f"  📤 Pushed {len(files_to_add)} artifact(s) to {AGENT_REPO}")
+        for key, url in urls.items():
+            print(f"     {key}: {url}")
+    except subprocess.CalledProcessError as e:
+        stderr = e.stderr.decode() if e.stderr else str(e)
+        # "nothing to commit" is fine — artifacts may already be pushed
+        if "nothing to commit" in stderr or "no changes added" in stderr:
+            print("  ℹ️ Artifacts already committed")
+        else:
+            print(f"  ⚠️ Git push failed: {stderr[:200]}")
+            # URLs still valid if files were pushed in a previous run
+    except Exception as e:
+        print(f"  ⚠️ Git push failed: {e}")
+
+    return urls
 
 
-# ── Comment builder ──────────────────────────────────────────
+# ── Action parsing (handles both dict and string formats) ────
 
 
-def extract_action_type(actions: list[str]) -> tuple[str, str]:
-    """Extract a human-readable action type and detail from action strings.
+def extract_action_type(actions: list) -> tuple[str, str]:
+    """Extract a human-readable action type and detail from actions.
+
+    Handles both formats:
+      - Dict format (current): [{"click": {"index": 123}}]
+      - String format (legacy): ["click_element(index=123)"]
 
     Returns (action_type, detail).
     """
@@ -96,7 +167,41 @@ def extract_action_type(actions: list[str]) -> tuple[str, str]:
 
     action = actions[0]
 
-    # Common browser-use action patterns
+    # ── Dict format (from model_dump — current format since commit f41b554)
+    if isinstance(action, dict):
+        for action_name, params in action.items():
+            if not isinstance(params, dict):
+                params = {}
+            name = action_name.lower()
+
+            if name in ("click", "clickelement", "click_element"):
+                idx = params.get("index", params.get("element_id", "?"))
+                return "Click", f"element #{idx}"
+            elif name in ("input", "inputtext", "input_text"):
+                text = str(params.get("text", ""))
+                if len(text) > 40:
+                    return "Type", f"`{text[:40]}…`"
+                return "Type", f"`{text}`"
+            elif name in ("go_to_url", "gotourl", "navigate"):
+                url = params.get("url", "")
+                return "Navigate", url[:60]
+            elif name in ("scroll", "scrollaction"):
+                direction = params.get("direction", "down")
+                return "Scroll", direction
+            elif name in ("send_keys", "sendkeys", "key_press"):
+                keys = params.get("keys", params.get("key", ""))
+                return "Key", f"`{keys}`"
+            elif name in ("extract_content", "extractcontent", "extract"):
+                return "Extract", "page content"
+            elif name in ("done", "doneaction"):
+                text = params.get("text", "")
+                return "Done", text[:50]
+            else:
+                return action_name.replace("_", " ").title(), str(params)[:50]
+        return "Action", ""
+
+    # ── String format (legacy)
+    action_str = str(action)
     patterns = [
         (r"click_element.*index=(\d+)", "Click", lambda m: f"element #{m.group(1)}"),
         (r"input_text.*text=['\"](.{0,40})", "Type", lambda m: f"`{m.group(1)}…`" if len(m.group(1)) >= 40 else f"`{m.group(1)}`"),
@@ -106,14 +211,12 @@ def extract_action_type(actions: list[str]) -> tuple[str, str]:
         (r"extract_content", "Extract", lambda _: "page content"),
         (r"done", "Done", lambda _: "task complete"),
     ]
-
     for pattern, action_type, detail_fn in patterns:
-        m = re.search(pattern, action, re.IGNORECASE)
+        m = re.search(pattern, action_str, re.IGNORECASE)
         if m:
             return action_type, detail_fn(m)
 
-    # Fallback: first 50 chars of action string
-    return "Action", action[:50]
+    return "Action", action_str[:50]
 
 
 def result_emoji(step: dict) -> str:
@@ -149,56 +252,90 @@ def mask_password(text: str) -> str:
     return text.replace(PLANE_PASSWORD, "***")
 
 
-def build_comment(issue_number: str, verdict: dict, steps: list[dict], image_urls: dict) -> str:
-    """Build the GitHub Markdown comment body."""
+# ── Comment builder ──────────────────────────────────────────
+
+
+def build_comment(
+    issue_number: str,
+    verdict: dict,
+    steps: list[dict],
+    image_urls: dict,
+    playwright_test: str = "",
+) -> str:
+    """Build the rich GitHub Markdown comment body."""
     parts = []
 
     # ── Header
+    status = verdict["status"]
+    status_emoji = "✅" if "REPRODUCED" in status and "NOT" not in status else "❌" if "NOT" in status else "⚠️"
     parts.append(f"### 🔍 Reproduction Report — `repro-agent`\n")
-    parts.append(f"**Verdict:** {verdict['status']}")
+    parts.append(f"**Verdict:** {status_emoji} {status}")
     parts.append(f"**Summary:** {verdict['summary']}")
     parts.append(f"**Run time:** {verdict.get('duration', '?')}  ·  **Steps:** {verdict.get('steps', '?')}")
     parts.append("")
 
-    # ── GIF (if available)
+    # ── GIF
     gif_url = image_urls.get("gif")
     if gif_url:
         parts.append("---\n")
-        parts.append("#### Agent Run\n")
+        parts.append("#### 🎬 Agent Run\n")
         parts.append(f"![agent-run]({gif_url})\n")
+        parts.append("> Full autonomous browser session — login, navigation, reproduction, and bug observation.\n")
 
-    # ── Step table
+    # ── Step table with agent thoughts
     if steps:
         parts.append("---\n")
-        parts.append("#### Steps Taken\n")
-        parts.append("| # | Action | Detail | Result |")
-        parts.append("|---|--------|--------|--------|")
+        parts.append("#### 📋 Steps Taken\n")
+        parts.append("| # | Action | Detail | Agent Thought | Result |")
+        parts.append("|---|--------|--------|---------------|--------|")
 
-        for step in steps[:25]:  # Cap at 25 rows to keep comment readable
+        for step in steps[:25]:
             num = step.get("step", "?")
             action_type, detail = extract_action_type(step.get("actions", []))
+            thought = step.get("thought", "")
+            # Truncate thought for table readability
+            if len(thought) > 60:
+                thought = thought[:57] + "..."
             emoji = result_emoji(step)
             res = result_text(step)
             # Mask passwords and escape pipes
             detail = mask_password(detail).replace("|", "\\|")
+            thought = mask_password(thought).replace("|", "\\|").replace("\n", " ")
             res = mask_password(res).replace("|", "\\|")
-            parts.append(f"| {num} | {action_type} | {detail} | {emoji} {res} |")
+            parts.append(f"| {num} | {action_type} | {detail} | {thought} | {emoji} {res} |")
 
         if len(steps) > 25:
             parts.append(f"\n*...and {len(steps) - 25} more steps (see full action log)*\n")
         parts.append("")
 
-    # ── Evidence screenshot (if available)
+    # ── Evidence screenshot
     screenshot_url = image_urls.get("screenshot")
     if screenshot_url:
         parts.append("---\n")
-        parts.append("#### Evidence\n")
+        parts.append("#### 🖼️ Evidence\n")
         parts.append(f"![evidence]({screenshot_url})\n")
+
+    # ── Regression test
+    if playwright_test:
+        parts.append("---\n")
+        parts.append("#### 🧪 Regression Test\n")
+        parts.append("<details>")
+        parts.append("<summary>Auto-generated Playwright test (click to expand)</summary>\n")
+        parts.append("```python")
+        parts.append(mask_password(playwright_test))
+        parts.append("```\n")
+        parts.append("</details>\n")
 
     # ── Footer
     parts.append("---\n")
+    agent_repo_url = f"https://github.com/{AGENT_REPO}"
+    artifacts_url = f"{agent_repo_url}/tree/{AGENT_BRANCH}/reproductions/{issue_number}"
     tool = verdict.get("tool", "browser-use + Claude Sonnet 4 via OpenRouter")
-    parts.append(f"<sub>Generated by <b>repro-agent</b> · {mask_password(tool)}</sub>")
+    parts.append(
+        f'<sub>🤖 Generated by <a href="{agent_repo_url}"><b>repro-agent</b></a>'
+        f" · {mask_password(tool)}"
+        f' · <a href="{artifacts_url}">Full artifacts</a></sub>'
+    )
 
     return mask_password("\n".join(parts))
 
@@ -208,7 +345,7 @@ def build_comment(issue_number: str, verdict: dict, steps: list[dict], image_url
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Post a reproduction report as a GitHub issue comment",
+        description="Post a rich reproduction report as a GitHub issue comment",
         epilog="Examples:\n"
                "  python scripts/post_comment.py --issue 9329\n"
                "  python scripts/post_comment.py --issue 9329 --dry-run\n"
@@ -218,6 +355,7 @@ def main():
     parser.add_argument("--issue", required=True, help="Issue number")
     parser.add_argument("--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})")
     parser.add_argument("--dry-run", action="store_true", help="Generate comment file without posting")
+    parser.add_argument("--no-upload", action="store_true", help="Skip git push of artifacts (use existing URLs)")
     args = parser.parse_args()
 
     repro_dir = Path(f"reproductions/{args.issue}")
@@ -230,14 +368,38 @@ def main():
     print(f"── Reading artifacts from {repro_dir}/ ──")
     verdict = read_verdict(repro_dir)
     steps = read_action_log(repro_dir)
-    image_urls = read_image_urls(repro_dir)
+    playwright_test = read_playwright_test(repro_dir, args.issue)
 
-    print(f"  Verdict:    {verdict['status']}")
-    print(f"  Steps:      {len(steps)}")
-    print(f"  Images:     {list(image_urls.keys()) or 'none'}")
+    print(f"  Verdict:      {verdict['status']}")
+    print(f"  Steps:        {len(steps)}")
+    print(f"  PW test:      {'yes' if playwright_test else 'no'}")
+
+    # Upload artifacts to get public URLs
+    if args.dry_run or args.no_upload:
+        print("  ℹ️ Skipping artifact upload")
+        image_urls = {}
+        # Build expected URLs even without pushing (for dry-run preview)
+        gif_path = repro_dir / "agent-run.gif"
+        if gif_path.exists():
+            image_urls["gif"] = (
+                f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
+                f"reproductions/{args.issue}/agent-run.gif"
+            )
+        evidence_files = sorted(repro_dir.glob("evidence-*.png"))
+        if evidence_files:
+            best = evidence_files[-1]
+            image_urls["screenshot"] = (
+                f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
+                f"reproductions/{args.issue}/{best.name}"
+            )
+    else:
+        print("\n── Uploading artifacts via git push ──")
+        image_urls = upload_artifacts_via_git(repro_dir, args.issue)
+
+    print(f"  Images:       {list(image_urls.keys()) or 'none'}")
 
     # Build comment
-    comment = build_comment(args.issue, verdict, steps, image_urls)
+    comment = build_comment(args.issue, verdict, steps, image_urls, playwright_test)
 
     # Save to file
     comment_path = repro_dir / "github-comment.md"

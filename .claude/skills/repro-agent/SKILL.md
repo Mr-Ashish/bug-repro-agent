@@ -55,6 +55,21 @@ pytest reproductions/<N>/test_<N>.py -v --headed
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
+## After drive.py completes — verify artifacts
+
+Check that all expected artifacts were generated:
+
+```bash
+ls reproductions/<N>/verdict.md         # must exist
+ls reproductions/<N>/action-log.json    # must exist
+ls reproductions/<N>/test_<N>.py        # Playwright test — verify it was generated
+ls reproductions/<N>/github-comment.md  # comment file — verify it was posted
+ls reproductions/<N>/agent-run.gif      # GIF of browser session
+ls reproductions/<N>/evidence-*.png     # screenshots
+```
+
+If the Playwright test or github-comment.md is missing, check drive.py output for errors. The test generator or comment poster may have failed — fix and rerun.
+
 ## Retry loop
 
 If the verdict is not `REPRODUCED`, read the artifacts in `reproductions/<N>/` (action-log, verdict, screenshots), diagnose what went wrong, improve the `--context`, and rerun with `--post`. Max 3 attempts.
