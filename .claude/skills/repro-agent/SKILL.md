@@ -140,6 +140,20 @@ pytest reproductions/<N>/test_<N>.py -v --headed
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
+## Retry loop (max 3 attempts)
+
+If the verdict is `INCONCLUSIVE` or `NOT_REPRODUCED`, **read the artifacts before giving up**:
+
+1. Read `reproductions/<N>/action-log.json` — check for steps with `"error"` fields or empty `"actions"`
+2. Read `reproductions/<N>/verdict.md` — read the agent's own explanation of what happened
+3. Diagnose: wrong page/view? missed a UI element? timed out? Pydantic errors?
+4. Write an improved `reproductions/<N>/context.txt` that fixes the gap (e.g. "Switch to List view first", "Click the ⋯ menu, not the title")
+5. Rerun with `--context reproductions/<N>/context.txt`
+
+Stop retrying when: verdict is `REPRODUCED`, or you've hit 3 attempts, or the same failure repeats with no new information.
+
+**Only use `--post` on the final attempt** so the GitHub issue gets one clean comment, not three.
+
 ## Identity — Reproducer, NOT Fixer
 
 This agent **reproduces** bugs. It does not fix, patch, or resolve them.
