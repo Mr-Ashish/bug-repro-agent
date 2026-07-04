@@ -607,6 +607,7 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
 
         # ── Generate Playwright test ──────────────────────────
         print("\n── Generating Playwright test ──")
+        test_path = repro_dir / f"test_{issue['number']}.py"
         try:
             gen_result = subprocess.run(
                 ["python", "scripts/generate_playwright.py",
@@ -620,6 +621,30 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
                 print(f"  ⚠️ Playwright gen failed: {gen_result.stderr.strip()}")
         except Exception as e:
             print(f"  ⚠️ Could not generate Playwright test: {e}")
+
+        # ── Run Playwright test ───────────────────────────────
+        if test_path.exists():
+            print("\n── Running Playwright test ──")
+            try:
+                pw_result = subprocess.run(
+                    ["pytest", str(test_path), "-v", "--timeout=60"],
+                    capture_output=True, text=True, timeout=120,
+                )
+                pw_output = (pw_result.stdout + pw_result.stderr).strip()
+                # Show last 20 lines to keep output readable
+                pw_lines = pw_output.splitlines()[-20:]
+                for line in pw_lines:
+                    print(f"  {line}")
+                if pw_result.returncode == 0:
+                    print("  ✅ Playwright test passed")
+                else:
+                    print(f"  ⚠️ Playwright test failed (exit {pw_result.returncode}) — selectors may need refinement")
+            except subprocess.TimeoutExpired:
+                print("  ⚠️ Playwright test timed out (120s)")
+            except FileNotFoundError:
+                print("  ⚠️ pytest not found — install: pip install pytest playwright")
+            except Exception as e:
+                print(f"  ⚠️ Could not run Playwright test: {e}")
 
         # ── Post to GitHub issue ──────────────────────────────
         if post:

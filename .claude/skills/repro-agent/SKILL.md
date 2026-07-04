@@ -44,31 +44,24 @@ python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 
 **Always use `--post`.** The job isn't done until the verdict is posted to the GitHub issue.
 
-After drive.py completes, review the generated Playwright test:
-```bash
-# The test is auto-generated at reproductions/<N>/test_<N>.py
-cat reproductions/<N>/test_<N>.py
-
-# Run it (selectors may need refinement for full replay)
-pytest reproductions/<N>/test_<N>.py -v --headed
-```
+`drive.py` automatically generates AND runs the Playwright test. Check its output for pass/fail. If the test fails with selector errors, that's expected — the auto-generated selectors use element indices, not stable selectors.
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
-## After drive.py completes — verify artifacts
+## After drive.py completes — verify ALL artifacts
 
-Check that all expected artifacts were generated:
+This is mandatory. Check that every artifact was generated:
 
 ```bash
-ls reproductions/<N>/verdict.md         # must exist
-ls reproductions/<N>/action-log.json    # must exist
-ls reproductions/<N>/test_<N>.py        # Playwright test — verify it was generated
-ls reproductions/<N>/github-comment.md  # comment file — verify it was posted
-ls reproductions/<N>/agent-run.gif      # GIF of browser session
-ls reproductions/<N>/evidence-*.png     # screenshots
+ls reproductions/<N>/verdict.md         # must exist — the verdict
+ls reproductions/<N>/action-log.json    # must exist — step traces
+ls reproductions/<N>/test_<N>.py        # must exist — Playwright regression test
+ls reproductions/<N>/github-comment.md  # must exist — posted to GitHub
+ls reproductions/<N>/agent-run.gif      # should exist — GIF of browser session
+ls reproductions/<N>/evidence-*.png     # should exist — screenshots
 ```
 
-If the Playwright test or github-comment.md is missing, check drive.py output for errors. The test generator or comment poster may have failed — fix and rerun.
+If any of `verdict.md`, `action-log.json`, `test_<N>.py`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
 
 ## Retry loop
 
