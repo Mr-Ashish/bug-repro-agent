@@ -126,110 +126,26 @@ def read_root_cause(repro_dir: Path) -> str:
 
 
 def _pick_best_evidence(repro_dir: Path) -> Path | None:
-    """Pick the best evidence screenshot — the one most likely showing the bug.
+    """Dumb fallback — returns the last evidence screenshot.
 
-    Strategy (in priority order):
-    1. Find the step in the action log where the agent observed the error
-       (extracted_content mentions 'error', 'toast', 'fail', etc.) and
-       use that step's screenshot — this is the moment the bug is visible.
-    2. Find the step just before the 'done' action (verdict step) — the
-       agent typically screenshots the bug state before concluding.
-    3. Fall back to the last screenshot.
-
-    The naive "second-to-last" heuristic fails because error toasts are
-    ephemeral (~3s) — by the time the agent takes later screenshots,
-    the toast has disappeared.
+    Only used when the meta-agent doesn't specify --evidence.
+    The meta-agent should review all screenshots with vision and
+    pass the smoking-gun screenshot via --evidence instead.
     """
     evidence_files = sorted(repro_dir.glob("evidence-*.png"))
     if not evidence_files:
         return None
-
-    # Try to find the bug-moment step from the action log
-    action_log_path = repro_dir / "action-log.json"
-    if action_log_path.exists():
-        try:
-            action_log = json.loads(action_log_path.read_text())
-            bug_step = None
-            done_step = None
-
-            submit_step = None
-
-            for step in action_log:
-                step_num = step.get("step", 0)
-                actions = step.get("actions", [])
-
-                # Track the submit action (Enter/click that triggers the bug)
-                # The screenshot right AFTER submit is most likely to show the toast
-                if actions and isinstance(actions[0], dict):
-                    for name, params in actions[0].items():
-                        name_l = name.lower()
-                        if name_l in ("send_keys", "sendkeys", "key_press"):
-                            keys = str(params.get("keys", params.get("key", ""))).lower()
-                            if keys in ("enter", "return"):
-                                submit_step = step_num
-                        elif name_l in ("click", "clickelement", "click_element"):
-                            # Click on a submit/create button
-                            pass
-
-                # Check results for error observations
-                for r in step.get("results", []):
-                    content = str(r.get("extracted_content", "")).lower()
-                    error = str(r.get("error", "")).lower()
-                    # Look for error toast / validation message observations
-                    if any(kw in content for kw in ["error", "toast", "fail", "some error occurred", "generic"]):
-                        bug_step = step_num
-                    if any(kw in error for kw in ["error", "fail"]):
-                        bug_step = step_num
-                    if r.get("is_done"):
-                        done_step = step_num
-
-                # Check agent thought for error observations
-                thought = str(step.get("thought", "")).lower()
-                if any(kw in thought for kw in ["error toast", "generic error", "some error", "bug confirmed", "error message"]):
-                    bug_step = step_num
-
-            # Use bug-moment screenshot if found
-            if bug_step is not None:
-                # Screenshots are 0-indexed (evidence-00.png = step 1)
-                idx = bug_step - 1
-                if 0 <= idx < len(evidence_files):
-                    return evidence_files[idx]
-                # Also try the step after (screenshot taken after observing)
-                if 0 <= idx + 1 < len(evidence_files):
-                    return evidence_files[idx + 1]
-
-            # Use the screenshot from the form submit step (Enter key)
-            # Error toasts appear immediately after submit — the screenshot
-            # taken at this step is most likely to capture the ephemeral toast.
-            # Evidence files are 1-indexed (evidence-01.png = step 1) but
-            # the sorted list is 0-indexed, so step N = evidence_files[N-1].
-            if submit_step is not None:
-                # Screenshot AT the submit step (toast just appeared)
-                idx = submit_step - 1
-                if 0 <= idx < len(evidence_files):
-                    return evidence_files[idx]
-                # Or the step right after (agent observing the result)
-                idx = submit_step
-                if 0 <= idx < len(evidence_files):
-                    return evidence_files[idx]
-
-            # Use step before done as fallback
-            if done_step is not None and done_step >= 2:
-                idx = done_step - 2  # step before done, 0-indexed
-                if 0 <= idx < len(evidence_files):
-                    return evidence_files[idx]
-
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass  # Fall through to simple heuristic
-
-    # Simple fallback: second-to-last (better than last which is often post-toast)
-    if len(evidence_files) >= 2:
-        return evidence_files[-2]
     return evidence_files[-1]
 
 
-def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
-    """Commit and push GIF, video, + key evidence screenshot, return raw URLs.
+def upload_artifacts_via_git(
+    repro_dir: Path, issue_number: str, evidence_path: Path | None = None,
+) -> dict:
+    """Commit and push GIF, video, + evidence screenshot, return raw URLs.
+
+    Args:
+        evidence_path: Explicit screenshot chosen by the meta-agent.
+                       If None, falls back to _pick_best_evidence().
 
     Returns dict with optional 'gif', 'video', and 'screenshot' keys
     containing raw.githubusercontent.com URLs.
@@ -257,8 +173,8 @@ def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
                 f"reproductions/{issue_number}/{video.name}"
             )
 
-    # Find best evidence screenshot (second-to-last = bug moment)
-    best = _pick_best_evidence(repro_dir)
+    # Evidence screenshot — prefer explicit path from meta-agent
+    best = evidence_path if evidence_path and evidence_path.exists() else _pick_best_evidence(repro_dir)
     if best and best.stat().st_size > 0:
         files_to_add.append(str(best))
         urls["screenshot"] = (
@@ -528,6 +444,11 @@ def main():
     parser.add_argument("--repo", default=DEFAULT_REPO, help=f"GitHub repo (default: {DEFAULT_REPO})")
     parser.add_argument("--dry-run", action="store_true", help="Generate comment file without posting")
     parser.add_argument("--no-upload", action="store_true", help="Skip git push of artifacts (use existing URLs)")
+    parser.add_argument(
+        "--evidence",
+        help="Path to the smoking-gun screenshot chosen by the meta-agent. "
+             "If not specified, falls back to the last evidence screenshot.",
+    )
     args = parser.parse_args()
 
     repro_dir = Path(f"reproductions/{args.issue}")
@@ -546,6 +467,14 @@ def main():
     print(f"  Steps:        {len(steps)}")
     print(f"  PW test:      {'yes' if playwright_test else 'no'}")
 
+    # Resolve evidence path from --evidence flag
+    evidence_path = Path(args.evidence) if args.evidence else None
+    if evidence_path and evidence_path.exists():
+        print(f"  Evidence:     {evidence_path.name} (meta-agent picked)")
+    elif evidence_path:
+        print(f"  ⚠️ Evidence file not found: {evidence_path}, using fallback")
+        evidence_path = None
+
     # Upload artifacts to get public URLs
     if args.dry_run or args.no_upload:
         print("  ℹ️ Skipping artifact upload")
@@ -557,7 +486,7 @@ def main():
                 f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
                 f"reproductions/{args.issue}/agent-run.gif"
             )
-        best = _pick_best_evidence(repro_dir)
+        best = evidence_path if evidence_path else _pick_best_evidence(repro_dir)
         if best:
             image_urls["screenshot"] = (
                 f"https://raw.githubusercontent.com/{AGENT_REPO}/{AGENT_BRANCH}/"
@@ -565,7 +494,7 @@ def main():
             )
     else:
         print("\n── Uploading artifacts via git push ──")
-        image_urls = upload_artifacts_via_git(repro_dir, args.issue)
+        image_urls = upload_artifacts_via_git(repro_dir, args.issue, evidence_path=evidence_path)
 
     print(f"  Images:       {list(image_urls.keys()) or 'none'}")
 

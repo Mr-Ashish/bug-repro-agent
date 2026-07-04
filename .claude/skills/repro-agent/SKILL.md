@@ -125,19 +125,16 @@ Given a GitHub issue URL, this agent reproduces the bug in a running local Plane
 The full pipeline: **fetch → reproduce → generate Playwright test → post to GitHub**.
 
 ```bash
-# Standard run — always use --post so the verdict is reported on the GitHub issue
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post
-
-# With source-code context (best results)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
-  --context "Feature URL: /$PLANE_WORKSPACE/projects/<id>/<relevant-path>/"
+# Standard run — do NOT use --post; you will post after reviewing evidence
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> \
+  --context reproductions/<N>/context.txt
 
 # Other options
 python scripts/drive.py --issue <N> --dry-run          # prompt only, no agent run
 python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 ```
 
-**Always use `--post`.** The job isn't done until the verdict is posted to the GitHub issue.
+**Do NOT use `--post` on drive.py.** You will review screenshots and post separately after picking the best evidence (see "Post to GitHub" below).
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
@@ -180,13 +177,30 @@ drive.py generates a **skeleton** test — login fixture works, but post-login s
 6. Run `pytest reproductions/<N>/test_<N>.py -v --base-url http://localhost:80` to verify it passes
 7. If it fails, fix selectors and rerun. Max 2 attempts.
 
-### 3. Verify the GitHub comment was posted
+### 3. Pick the smoking-gun evidence screenshot
 
+**You have vision. Use it.** Open each evidence screenshot and find the one that clearly shows the bug (error toast, broken UI, wrong state). Do NOT rely on heuristics.
+
+```bash
+# List all evidence screenshots
+ls reproductions/<N>/evidence-*.png
+```
+
+Open each screenshot with `read_file` and look for the visual proof of the bug (error messages, toasts, broken layouts, wrong data). Pick the one that a human would point at and say "see, this is the bug."
+
+### 4. Post to GitHub with the chosen evidence
+
+```bash
+python scripts/post_comment.py --issue <N> --repo makeplane/plane \
+  --evidence reproductions/<N>/evidence-XX.png
+```
+
+The `--evidence` flag tells the script which screenshot to feature as "Bug Evidence" in the comment. This is the most important image — it must show the bug clearly.
+
+Verify it posted:
 ```bash
 gh issue view <N> --repo makeplane/plane --json comments --jq '.comments[-1].body' | head -5
 ```
-
-Confirm the latest comment is the reproduction report, not a stale one.
 
 ## Retry loop
 
