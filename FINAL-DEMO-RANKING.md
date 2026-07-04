@@ -193,20 +193,24 @@ The top areas by issue volume (issues touch multiple components):
 
 ### The agent (`scripts/drive.py`)
 
+> All values below are read from `.env` with defaults in `scripts/drive.py` and `scripts/seed.py`.
+> See `CLAUDE.md` → "Configuration source of truth" for the full reference table.
+> Run `grep -n 'PLANE_URL\|MODEL\|max_steps\|viewport' scripts/drive.py` to verify current values.
+
 - **Library:** [browser-use](https://github.com/browser-use/browser-use) (Python)
-- **Model:** Claude Sonnet 4 via OpenRouter
-- **Browser:** Chrome via CDP (WebSocket, localhost:9222)
-- **Target:** Plane running on `localhost:80` via docker-compose
-- **Credentials:** `admin@admin.com` / `qweQWE123!@#`
-- **Workspace:** `plane-dev`
-- **Seed data:** Project SEED — 5 work items (incl. edge cases), 5 states
-- **Max steps:** 50
-- **Viewport:** 1920 × 1080
+- **Model:** from `.env` `BROWSER_USE_MODEL` (default in `scripts/drive.py` → `MODEL`)
+- **Browser:** Chrome via CDP (port from `scripts/drive.py` → `discover_cdp_url()`)
+- **Target:** Plane at `.env` `PLANE_URL` (default in `scripts/drive.py`)
+- **Credentials:** `.env` `PLANE_EMAIL` / `PLANE_PASSWORD` (defaults in `scripts/drive.py`)
+- **Workspace:** `.env` `PLANE_WORKSPACE` (default in `scripts/drive.py`)
+- **Seed data:** Project SEED — work items and states defined in `scripts/seed.py` (`SEED_STATES`, `SEED_ISSUES` lists)
+- **Max steps:** `scripts/drive.py` → `agent.run(max_steps=...)`
+- **Viewport:** `scripts/drive.py` → `BrowserConfig(viewport=...)`
 
 ### CAN do
 
-- Navigate to any page on localhost:80
-- Log in with admin credentials
+- Navigate to any page on the Plane instance (`PLANE_URL` from `.env`)
+- Log in with configured credentials (`PLANE_EMAIL`/`PLANE_PASSWORD` from `.env`)
 - Click buttons, links, dropdowns, chevrons, menu items
 - Type text into input fields (including long strings, special characters)
 - Read visible text on screen via vision model
@@ -222,7 +226,7 @@ The top areas by issue volume (issues touch multiple components):
 | Limitation | Why it matters |
 |-----------|----------------|
 | Only Chrome (no Safari, Firefox) | Safari-only bugs won't reproduce |
-| Only desktop viewport 1920×1080 | Mobile-only bugs won't reproduce |
+| Only desktop viewport (size from `scripts/drive.py` → `BrowserConfig`) | Mobile-only bugs won't reproduce |
 | No CLI tools | `plane push`, `prime-cli` bugs are unreachable |
 | No email send/receive | Can't verify email notifications |
 | No external services | GitHub OAuth, Slack, JIRA import all unreachable |
@@ -307,7 +311,7 @@ Confidence ratings:
 | **Estimated time** | ~30s |
 
 **Reproduction steps for the agent:**
-1. Log in to Plane at localhost:80
+1. Log in to Plane (at `PLANE_URL` — see `.env`)
 2. Navigate to the SEED project
 3. Go to Work Items
 4. Click the inline "New work item" input (not the modal)
@@ -515,7 +519,7 @@ Confidence ratings:
 1. Log in to Plane
 2. Navigate to Profile (sidebar bottom) → Security
 3. Click "Change Password"
-4. Enter current password: `qweQWE123!@#`
+4. Enter current password (from `.env` `PLANE_PASSWORD`)
 5. Enter new password: `SecurePassword123!` (meets all stated criteria)
 6. Click "Update Password"
 7. Observe: "Password validation failed" error
@@ -677,7 +681,7 @@ Confidence ratings:
 
 **Reproduction:** Work Items → Table/Spreadsheet layout → scroll right → column headers desync from data.
 
-**Risk:** Needs enough property columns visible to trigger horizontal scrolling at 1920px viewport width. Might need to add extra property columns first.
+**Risk:** Needs enough property columns visible to trigger horizontal scrolling at the configured viewport width (see `scripts/drive.py` `BrowserConfig`). Might need to add extra property columns first.
 
 ---
 
@@ -687,7 +691,7 @@ These issues scored high in the algorithmic pass but **cannot be reproduced by t
 
 | Issue | Algorithmic Score | Title | Why the agent can't reproduce it |
 |-------|------------------:|-------|----------------------------------|
-| [#8008](https://github.com/makeplane/plane/issues/8008) | 88 | Invitation with different email | Requires **second user account** — agent only has admin@admin.com |
+| [#8008](https://github.com/makeplane/plane/issues/8008) | 88 | Invitation with different email | Requires **second user account** — agent only has one account (see `.env` `PLANE_EMAIL`) |
 | [#6740](https://github.com/makeplane/plane/issues/6740) | 84 | MinIO/S3 config mismatch | **Config/env variable issue** — no browser manifestation |
 | [#5728](https://github.com/makeplane/plane/issues/5728) | 84 | Invalid URL query params | Agent **cannot edit the URL bar** — only interacts with DOM elements |
 | [#9158](https://github.com/makeplane/plane/issues/9158) | 82 | dispatch() returns exception | **Backend error** — no UI manifestation visible in browser |
@@ -698,7 +702,7 @@ These issues scored high in the algorithmic pass but **cannot be reproduced by t
 | [#7570](https://github.com/makeplane/plane/issues/7570) | 76 | God Mode 403 after update | **Coolify-specific** — not a Plane bug, deployment platform issue |
 | [#8567](https://github.com/makeplane/plane/issues/8567) | 74 | CJK fonts in PDF export | Agent **cannot inspect downloaded PDFs** — content goes to disk |
 | [#6359](https://github.com/makeplane/plane/issues/6359) | 74 | US timezone offsets wrong | **DST-dependent** — on July 4, US timezones ARE in EDT, offsets are correct |
-| [#9084](https://github.com/makeplane/plane/issues/9084) | 61 | Mobile text overlap | **Mobile viewport only** — agent viewport is 1920×1080 desktop |
+| [#9084](https://github.com/makeplane/plane/issues/9084) | 61 | Mobile text overlap | **Mobile viewport only** — agent uses desktop viewport (see `scripts/drive.py` `BrowserConfig`) |
 | [#5485](https://github.com/makeplane/plane/issues/5485) | 64 | Japanese IME submits comment | Agent **cannot use input methods** — browser-use types directly |
 | [#8901](https://github.com/makeplane/plane/issues/8901) | 54 | macOS ⌘F not working | **Desktop app only** — agent tests the web app, not Electron/Tauri |
 | [#9041](https://github.com/makeplane/plane/issues/9041) | 51 | admin* slug 403s API | Requires **creating new workspace** — risky, changes global state |
@@ -741,9 +745,9 @@ These issues scored high in the algorithmic pass but **cannot be reproduced by t
 
 ## Pre-demo checklist
 
-- [ ] Plane running on localhost:80 (`docker-compose up`)
-- [ ] Chrome open with `--remote-debugging-port=9222`
-- [ ] `.env` configured (OPENROUTER_API_KEY, CDP_URL, PLANE credentials)
-- [ ] Seed data loaded (SEED project with issues, states, sub-issues)
-- [ ] Dry-run `python scripts/drive.py --issue 9329 --dry-run` to verify prompt generation
+- [ ] Plane running at `PLANE_URL` from `.env` (default in `scripts/drive.py`) — `docker-compose up`
+- [ ] Chrome open with `--remote-debugging-port=<CDP port>` (see `scripts/drive.py` → `discover_cdp_url()`)
+- [ ] `.env` configured (OPENROUTER_API_KEY, PLANE_URL, PLANE_EMAIL, PLANE_PASSWORD, PLANE_WORKSPACE)
+- [ ] Seed data loaded: `python scripts/seed.py check` exits 0
+- [ ] Dry-run `python scripts/drive.py --issue <N> --dry-run` to verify prompt generation
 - [ ] Test one real run before going on stage

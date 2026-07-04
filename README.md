@@ -30,7 +30,7 @@ Human → Grok (meta-agent, reads SKILL.md) → drive.py (infra) → browser-use
 Fetch:   gh issue view → issue title + body
 Prompt:  generic template + issue body + Plane credentials + source-code context
 Agent:   browser-use (Python) → Claude Sonnet 4 via OpenRouter → Chrome CDP
-Target:  Plane (local docker-compose on localhost:80 via Caddy)
+Target:  Plane (local docker-compose via Caddy — URL from .env PLANE_URL, default in scripts/drive.py)
 Output:  reproductions/<issue-number>/ (verdict, screenshots, traces, Playwright test)
 ```
 
@@ -56,7 +56,7 @@ reproductions/<N>/
 
 ## Prerequisites
 
-- [Plane](https://github.com/makeplane/plane) running locally on `:80` (via Caddy proxy)
+- [Plane](https://github.com/makeplane/plane) running locally (port from `.env` `PLANE_URL`, default in `scripts/drive.py`)
 - Chrome with `--remote-debugging-port=9222`
 - Python 3.11+
 - OpenRouter API key
@@ -96,7 +96,7 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --p
 
 # With source-code context from the meta-agent (best results)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
-  --context "Feature URL: /plane-dev/projects/<id>/issues/"
+  --context "Feature URL: /$PLANE_WORKSPACE/projects/<id>/issues/"
 
 # By issue number (uses GITHUB_REPO from .env, default: makeplane/plane)
 python scripts/drive.py --issue 9329 --post

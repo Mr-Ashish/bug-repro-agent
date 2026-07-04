@@ -88,7 +88,7 @@ Use `--context` to inject your discoveries into the browser agent's prompt:
 ```bash
 # Inline context string (adapt to whatever the bug is about)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
-  --context "Feature URL: /plane-dev/projects/<project-id>/<feature-path>/
+  --context "Feature URL: /$PLANE_WORKSPACE/projects/<project-id>/<feature-path>/
 Key UI element is behind a ⋯ dropdown.
 Component: plane/apps/web/app/.../<feature>/page.tsx"
 
@@ -120,7 +120,7 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --po
 
 # Full E2E with source-code context (best results — adapt context to the bug's feature area)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
-  --context "Feature URL: /plane-dev/projects/<id>/<relevant-path>/"
+  --context "Feature URL: /$PLANE_WORKSPACE/projects/<id>/<relevant-path>/"
 
 # Other options
 python scripts/drive.py --issue <N> --dry-run          # prompt only, no agent run

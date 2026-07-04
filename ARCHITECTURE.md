@@ -30,10 +30,16 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 
 ## System Layers
 
+> **Config values in this diagram** (ports, step counts, etc.) are read from source files at runtime.
+> See `CLAUDE.md` → "Configuration source of truth" for the full reference table.
+> Ports/URLs: `.env` `PLANE_URL` → default in `scripts/drive.py`.
+> Step limit: `scripts/drive.py` → `agent.run(max_steps=...)`.
+> CDP port: `scripts/drive.py` → `discover_cdp_url()`.
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  HUMAN                                                          │
-│  "Reproduce issue #9329"                                        │
+│  "Reproduce issue #<N>"                                         │
 └──────────────────────────┬──────────────────────────────────────┘
                            │
                            ▼
@@ -45,7 +51,7 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 │  Does:  orchestrate scripts, interpret results, retry/chain     │
 │                                                                 │
 │  Pre:   python scripts/seed.py check   (→ populate if needed)   │
-│  Runs:  python scripts/drive.py --issue 9329                    │
+│  Runs:  python scripts/drive.py --issue <N>                     │
 │  Then:  reviews artifacts, Playwright test, verdict              │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ subprocess
@@ -53,19 +59,19 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 ┌─────────────────────────────────────────────────────────────────┐
 │  drive.py (Driver Script)                                       │
 │                                                                 │
-│  1. Auto-discover Chrome CDP (port 9222)                        │
+│  1. Auto-discover Chrome CDP  ← discover_cdp_url() in drive.py  │
 │  2. Preflight: Chrome ✓  Plane ✓  gh ✓                          │
 │  3. gh issue view → fetch title + body                          │
 │  4. Template + issue body + creds → task prompt                 │
 │  5. Create browser-use Agent(task, llm, browser)                │
-│  6. agent.run(max_steps=50) with timeout                        │
+│  6. agent.run(max_steps=N) with timeout  ← see drive.py         │
 │  7. Save artifacts to reproductions/<N>/                        │
 │  8. Parse VERDICT line → exit code                              │
 └──────────────────────────┬──────────────────────────────────────┘
                            │ in-process
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  browser-use Agent (Claude Sonnet 4 via OpenRouter)             │
+│  browser-use Agent  ← model from .env BROWSER_USE_MODEL         │
 │                                                                 │
 │  Receives: natural language task with bug report + Plane creds  │
 │  Does:     login → navigate → execute repro steps → observe     │
@@ -76,7 +82,7 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
                            │ CDP WebSocket
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  Chrome → Plane (localhost:80)                                │
+│  Chrome → Plane  ← URL from .env PLANE_URL (default: drive.py) │
 │  Docker: Next.js + Django + Postgres + Redis + MinIO            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -85,46 +91,49 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 
 ## UML Sequence Diagram
 
+> Ports, URLs, and step counts below reflect runtime defaults from `scripts/drive.py` and `.env`.
+> See `CLAUDE.md` → "Configuration source of truth" for how to resolve current values.
+
 ```mermaid
 sequenceDiagram
     actor Human
     participant Grok as Grok<br/>(Meta-Agent)
     participant Drive as drive.py<br/>(Driver)
     participant GH as gh CLI
-    participant Agent as browser-use Agent<br/>(Claude Sonnet 4)
+    participant Agent as browser-use Agent<br/>(model from .env)
     participant Chrome as Chrome<br/>(CDP)
-    participant Plane as Plane<br/>(localhost:80)
+    participant Plane as Plane<br/>(PLANE_URL from .env)
     participant Post as post_comment.py<br/>(Reporter)
 
     Note over Human,Grok: Layer 1 — Human → Meta-Agent
-    Human->>Grok: /repro #9329
+    Human->>Grok: /repro-agent <issue-url>
     Grok->>Grok: Read SKILL.md<br/>→ knows CLI flags, exit codes
 
     Note over Grok,Drive: Layer 2 — Meta-Agent → Driver
-    Grok->>Drive: python scripts/drive.py --issue 9329
+    Grok->>Drive: python scripts/drive.py --url <issue-url>
 
     Note over Drive,Plane: Preflight Checks
-    Drive->>Chrome: TCP connect to CDP port 9222
+    Drive->>Chrome: TCP connect to CDP port (discover_cdp_url)
     Chrome-->>Drive: ✓ reachable
-    Drive->>Plane: HTTP GET localhost:80
+    Drive->>Plane: HTTP GET $PLANE_URL
     Plane-->>Drive: ✓ responding
     Drive->>GH: gh auth status
     GH-->>Drive: ✓ authenticated
 
     Note over Drive,GH: Issue Fetch
-    Drive->>GH: gh issue view 9329 --repo makeplane/plane<br/>--json title,body,url,number
+    Drive->>GH: gh issue view <N> --repo $DEFAULT_REPO<br/>--json title,body,url,number
     GH-->>Drive: {title, body, url, number}
 
     Note over Drive: Prompt Build
-    Drive->>Drive: TASK_TEMPLATE + issue body<br/>+ Plane creds + nav map<br/>→ task prompt string
+    Drive->>Drive: TASK_TEMPLATE + issue body<br/>+ Plane creds + context<br/>→ task prompt string
     Drive->>Drive: Save issue.json + task-prompt.txt
 
     Note over Drive,Chrome: Agent Lifecycle
     Drive->>Chrome: GET /json/version → webSocketDebuggerUrl
-    Chrome-->>Drive: ws://localhost:9222/devtools/browser/...
+    Chrome-->>Drive: ws://...
     Drive->>Agent: Agent(task=prompt, llm=openrouter,<br/>browser=cdp, vision=True)
 
-    Note over Agent,Plane: Layer 3 — Browser Automation (up to 50 steps)
+    Note over Agent,Plane: Layer 3 — Browser Automation (max_steps from drive.py)
     rect rgb(240, 248, 255)
         Agent->>Chrome: Navigate to Plane login
         Chrome->>Plane: GET /
@@ -137,11 +146,11 @@ sequenceDiagram
         Chrome-->>Agent: Screenshot + DOM
 
         Agent->>Chrome: Navigate to project → issues
-        Chrome->>Plane: GET /plane-dev/projects/.../issues
+        Chrome->>Plane: GET /$WORKSPACE/projects/.../issues
         Plane-->>Chrome: Work items list
         Chrome-->>Agent: Screenshot + DOM
 
-        Agent->>Chrome: Execute reproduction steps<br/>(create issue, type long title, etc.)
+        Agent->>Chrome: Execute reproduction steps
         Chrome->>Plane: Various interactions
         Plane-->>Chrome: Bug behavior observed
         Chrome-->>Agent: Screenshot + DOM
@@ -149,7 +158,7 @@ sequenceDiagram
         Agent->>Agent: Reason about observed<br/>vs expected behavior
     end
 
-    Agent-->>Drive: "VERDICT: REPRODUCED | 256-char title<br/>shows generic error"<br/>+ AgentHistoryList
+    Agent-->>Drive: "VERDICT: REPRODUCED | <summary>"<br/>+ AgentHistoryList
 
     Note over Drive: Artifact Saving
     Drive->>Drive: Save action-log.json (per-step)
@@ -168,13 +177,13 @@ sequenceDiagram
     Post->>Post: Mask passwords everywhere
     Post->>Post: Build Markdown comment
     Post->>Post: Save github-comment.md
-    Post->>GH: gh issue comment 9329<br/>--repo makeplane/plane<br/>--body-file github-comment.md
+    Post->>GH: gh issue comment <N><br/>--repo $DEFAULT_REPO<br/>--body-file github-comment.md
     GH-->>Post: ✓ Comment posted
 
     Post-->>Grok: exit code 0
 
     Note over Grok,Human: Result
-    Grok-->>Human: Bug REPRODUCED ✅<br/>Artifacts: reproductions/9329/<br/>Comment posted to GitHub
+    Grok-->>Human: Bug REPRODUCED ✅<br/>Artifacts: reproductions/<N>/<br/>Comment posted to GitHub
 ```
 
 ---
@@ -218,8 +227,8 @@ sequenceDiagram
 | ❌ Agent emits `NOT_REPRODUCED` | Artifacts saved, exit code 1 |
 | ⚠️ Agent emits `INCONCLUSIVE` | Artifacts saved, exit code 2 |
 | 🚨 Agent crash / Plane crash | Partial artifacts + error.txt saved, exit code 3 |
-| ⏰ Timeout (default 300s) | Partial artifacts + error.txt saved, exit code 3 |
-| 📊 50 steps exhausted | Agent must conclude with whatever evidence it has |
+| ⏰ Timeout (default — see `scripts/drive.py` `--timeout`) | Partial artifacts + error.txt saved, exit code 3 |
+| 📊 Max steps exhausted (see `scripts/drive.py` `agent.run()`) | Agent must conclude with whatever evidence it has |
 
 ---
 

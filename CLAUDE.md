@@ -84,13 +84,43 @@ All artifacts go to `reproductions/<issue-number>/` — screenshots, action log,
 - Hardcode issue-specific logic — everything is driven by the issue body
 - Use `plane/web/` — the correct path is `plane/apps/web/`
 
-## Documentation staleness rule
+## Documentation staleness rule — AUTOMATIC
 
-**When you encounter a hardcoded value in any `.md` file that duplicates config from `.env` or a script, fix it immediately:**
+**This rule fires automatically.** Whenever you read, edit, or create any `.md` file and notice a hardcoded value that duplicates config from `.env` or a Python script, **fix it in the same operation** — don't defer to a follow-up.
 
-1. Replace the hardcoded value with a reference to the source-of-truth file and variable (see table above)
-2. For pre-flight commands that need actual values (e.g., `curl` URLs), read `.env` or the script default at runtime — don't copy-paste the value
-3. If you must show a value as an example, mark it clearly: `(default: X — see scripts/drive.py)`
-4. After fixing, verify no other `.md` file has the same stale value: `grep -r "<old_value>" *.md .claude/`
+### What counts as stale
 
-**This is an automatic task.** Whenever you read or edit any markdown file and notice a value that could drift from its source, fix it in the same commit.
+Any literal value in a `.md` file that can be resolved by reading a source file. Examples:
+
+| Stale pattern | Replace with |
+|---|---|
+| `localhost:80` | `PLANE_URL (see .env, default in scripts/drive.py)` |
+| `admin@admin.com` | `PLANE_EMAIL (see .env, default in scripts/drive.py)` |
+| `qweQWE123!@#` | `PLANE_PASSWORD (see .env, default in scripts/drive.py)` |
+| `plane-dev` | `PLANE_WORKSPACE (see .env, default in scripts/drive.py)` |
+| `max_steps=50` | `max_steps (see scripts/drive.py → agent.run())` |
+| `1920×1080` | `viewport (see scripts/drive.py → BrowserConfig)` |
+| `port 9222` | `CDP debug port (see scripts/drive.py → discover_cdp_url())` |
+| `anthropic/claude-sonnet-4` | `BROWSER_USE_MODEL (see .env, default in scripts/drive.py)` |
+| `makeplane/plane` | `DEFAULT_REPO (see scripts/drive.py)` |
+
+### How to fix
+
+1. Replace the hardcoded value with a **source-of-truth pointer**: file path + variable name
+2. For shell commands that need actual values at runtime, use `grep` or `python -c` to read them — never paste the value
+3. If a value MUST appear literally (e.g., inside an ASCII diagram for readability), add a comment: `← see scripts/drive.py` or put a note before the block
+4. After fixing, sweep for the same stale value: `grep -rn "<old_value>" *.md .claude/`
+
+### Verification command
+
+Run this after any doc change to check for remaining hardcoded config:
+```bash
+grep -rn 'localhost:80\b\|localhost:3000\|admin@admin\|qweQWE\|plane-dev\|max_steps=50\|1920.*1080\|1280.*720' *.md .claude/ 2>/dev/null
+```
+Any hit in narrative text (not a source-pointer) is a staleness violation — fix it.
+
+### Exceptions
+
+- **Historical docs** (like `DEMO_ACTION_PLAN.md`): values are snapshots from a past session — mark the file as historical, don't rewrite
+- **Bug reproduction step narratives** in ranking docs: reference the source once at section top, then use values for readability
+- **Code blocks showing `grep` commands**: the grep target IS the value, that's fine

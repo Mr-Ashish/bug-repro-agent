@@ -1,5 +1,10 @@
 # Live Demo Action Plan — Bug Repro Agent
 
+> ⚠️ **HISTORICAL DOCUMENT** — This file is a snapshot from a specific debugging session.
+> Config values (ports, passwords, viewport sizes) reflect what was discovered at that time.
+> For current values, always check the source of truth: `.env` and `scripts/drive.py`.
+> See `CLAUDE.md` → "Configuration source of truth" for the full reference table.
+
 **Date:** 2026-07-04  
 **Target:** Browser-Use Hackathon, Bengaluru  
 **Goal:** E2E reliable reproduction of any Plane GitHub issue in a single `/repro-agent <url>` command
