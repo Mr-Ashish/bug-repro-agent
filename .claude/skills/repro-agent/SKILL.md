@@ -5,16 +5,83 @@ description: "Reproduce any Plane bug from a GitHub issue URL. Drives a real bro
 
 # repro-agent
 
-## Before running
+## Before running — bring up the full stack
 
-Ensure three things before calling drive.py:
-1. **Plane is running** — Docker services up, frontend and API responding at `PLANE_URL` (from `.env`, default in `scripts/drive.py`)
-2. **Chrome has remote debugging** — port 9222
-3. **Seed data exists** — `python scripts/seed.py check` exits 0. If not, run `python scripts/seed.py populate`.
+Run these steps in order. Each step must succeed before moving to the next.
 
-Sync Plane to latest code first: pull `preview`, merge `plane-local-fixes`.
+### 1. Start Plane services
 
-If Plane isn't healthy after 60 seconds, stop. Don't debug Docker or Caddyfiles — that's a human problem.
+```bash
+cd plane && docker compose -f docker-compose-local.yml up -d
+```
+
+Wait for the API to be ready (migrator needs ~30-60s on first run):
+```bash
+echo "Waiting for API..." && until curl -s http://localhost:80/api/instances/ > /dev/null 2>&1; do sleep 3; done && echo "API ready!"
+```
+
+If services aren't healthy after 90 seconds, stop. Don't debug Docker or Caddyfiles — that's a human problem.
+
+### 2. Register admin + create workspace (fresh install only)
+
+Check if the instance needs first-time setup:
+```bash
+curl -s http://localhost:80/api/instances/ 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('needs_setup:', not d.get('is_setup_done', False))"
+```
+
+If `needs_setup: True`, run the setup from `plane/SETUP_REFERENCE.md` — steps 6-8 (register admin, sign in, create workspace). The key commands:
+
+```bash
+# Register instance admin
+rm -f /tmp/plane-cookies.txt
+curl -s -c /tmp/plane-cookies.txt http://localhost:80/auth/get-csrf-token/ > /dev/null
+CSRF=$(grep csrftoken /tmp/plane-cookies.txt | awk '{print $NF}')
+curl -s -o /dev/null -w "Admin signup: HTTP %{http_code}\n" \
+  -b /tmp/plane-cookies.txt -c /tmp/plane-cookies.txt \
+  -H "Referer: http://localhost/god-mode/" \
+  -d "csrfmiddlewaretoken=${CSRF}" \
+  -d "first_name=admin" -d "last_name=admin" \
+  -d "email=admin@admin.com" -d "company_name=admin" \
+  --data-urlencode "password=qweQWE123!@#" \
+  -d "is_telemetry_enabled=True" \
+  "http://localhost:80/api/instances/admins/sign-up/"
+
+# Sign in
+rm -f /tmp/plane-session.txt
+curl -s -c /tmp/plane-session.txt http://localhost:80/auth/get-csrf-token/ > /dev/null
+CSRF=$(grep csrftoken /tmp/plane-session.txt | awk '{print $NF}')
+curl -s -o /dev/null -w "Sign-in: HTTP %{http_code}\n" \
+  -b /tmp/plane-session.txt -c /tmp/plane-session.txt \
+  -H "Referer: http://localhost/" \
+  -d "csrfmiddlewaretoken=${CSRF}" \
+  -d "email=admin@admin.com" \
+  --data-urlencode "password=qweQWE123!@#" \
+  -d "medium=email" \
+  "http://localhost:80/auth/sign-in/"
+
+# Create workspace
+curl -s -b /tmp/plane-session.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Plane Dev", "slug": "plane-dev", "organization_size": "1-10"}' \
+  "http://localhost:80/api/workspaces/"
+```
+
+### 3. Chrome has remote debugging — port 9222
+
+```bash
+curl -s http://localhost:9222/json/version | python3 -c "import sys,json; print(json.load(sys.stdin)['webSocketDebuggerUrl'])"
+```
+
+### 4. Seed data exists
+
+```bash
+python scripts/seed.py check
+```
+
+If exit code 1, populate:
+```bash
+python scripts/seed.py populate
+```
 
 ## Context for the browser agent
 
