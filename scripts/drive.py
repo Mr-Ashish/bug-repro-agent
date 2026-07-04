@@ -159,6 +159,14 @@ TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 
 {body}
 {context_section}
+## Principles
+- **You are a reproducer, not a fixer.** Execute the steps, observe, report.
+- **Navigate by URL when possible.** Plane URLs follow patterns like `{plane_url}/{workspace}/projects/<project-id>/issues/`, `.../settings/`, `.../cycles/`, `.../modules/`, `.../pages/`. Use the address bar instead of hunting through menus.
+- **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
+- **Use context menus.** Settings and actions in Plane are often behind ⋯ (three-dot) menus, not always in the main sidebar.
+- **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed. Don't panic.
+- **Budget your steps.** You have limited actions. If the same approach fails twice, switch strategies.
+
 ## Verdict format
 End your final message with exactly one line:
 
@@ -179,9 +187,22 @@ You are a **bug reproducer**, not a fixer. Execute the steps, observe, report.
 - **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
 - **Use context menus.** Settings and actions in Plane are often behind ⋯ (three-dot) menus, not always in the main sidebar.
 - **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed.
-- **Budget your steps.** You have ≤50 actions. If the same approach fails twice, switch strategies immediately.
-- **Check the browser console.** If something looks visually correct but the bug is about data or state, use the evaluate action to run `JSON.stringify(console)` or inspect network responses.
-- **Screenshot before verdict.** Always take a screenshot of the final state as evidence before emitting your VERDICT line.
+- **Budget your steps.** You have limited actions. If the same approach fails twice, switch strategies immediately.
+- **One action per step.** Emit exactly one action per response. Do NOT combine multiple actions.
+
+## Action format reference (use EXACT field names)
+- `click`: `{"index": 123}`
+- `input`: `{"index": 123, "text": "hello"}` — field is `index`, NOT `element_index`
+- `send_keys`: `{"keys": "Enter"}` — field is `keys` (plural), NOT `key`
+- `navigate`: `{"url": "http://..."}`
+- `search_page`: `{"pattern": "error text"}` — field is `pattern`, NOT `query`
+- `wait`: `{"seconds": 3}`
+- `done`: `{"text": "VERDICT: ..."}` — use this to report your verdict
+- `screenshot`: `{}` — takes a screenshot for the next observation
+- `scroll`: `{"direction": "down", "amount": 500}`
+- `go_back`: `{}`
+
+Do NOT invent action names. Use only the actions listed above.
 """
 
 
@@ -267,7 +288,15 @@ def save_artifacts(history: AgentHistoryList, issue: dict, repro_dir: Path) -> N
         if step.model_output:
             entry["thought"] = str(getattr(step.model_output, "current_state", ""))
             actions = getattr(step.model_output, "action", [])
-            entry["actions"] = [str(a) for a in actions] if actions else []
+            if actions:
+                entry["actions"] = []
+                for a in actions:
+                    try:
+                        entry["actions"].append(a.model_dump(exclude_none=True))
+                    except Exception:
+                        entry["actions"].append(str(a))
+            else:
+                entry["actions"] = []
         else:
             entry["thought"] = ""
             entry["actions"] = []
@@ -557,12 +586,12 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         task=task,
         llm=llm,
         browser=browser,
-        use_vision=True,
+        use_vision="auto",
         generate_gif=str(repro_dir / "agent-run.gif"),
         save_conversation_path=str(repro_dir / "conversation.json"),
         sensitive_data={"x_password": PLANE_PASSWORD},
         max_failures=5,
-        max_actions_per_step=5,
+        max_actions_per_step=1,
         # ── Improvements ──────────────────────────────────────
         # 1. Principles in system prompt survive message compaction
         extend_system_message=SYSTEM_PROMPT_EXTENSION,
@@ -573,6 +602,8 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         loop_detection_window=12,
         # 4. Track LLM costs per run
         calculate_cost=True,
+        # 5. Include tool call examples in prompt for correct action format
+        include_tool_call_examples=True,
         # 5. Live progress callback
         register_new_step_callback=_on_step,
     )
