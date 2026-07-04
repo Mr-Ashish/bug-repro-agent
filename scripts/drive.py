@@ -377,7 +377,7 @@ def post_github_comment(issue: dict, repo: str, repro_dir: Path) -> bool:
     """Post a rich reproduction report to the GitHub issue.
 
     Delegates to scripts/post_comment.py which:
-    - Reads all artifacts (verdict, action-log, screenshots, Playwright test)
+    - Reads all artifacts (verdict, action-log, screenshots)
     - Uploads GIF + evidence via git push → raw.githubusercontent.com URLs
     - Builds rich Markdown with step traces, agent thoughts, evidence
     - Posts via gh issue comment

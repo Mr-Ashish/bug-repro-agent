@@ -16,7 +16,6 @@ Read `.claude/skills/repro-agent/SKILL.md` first — it has the full pre-flight 
 |---|---|
 | `scripts/drive.py` | Main driver — fetches issue, runs browser-use agent, saves artifacts |
 | `scripts/seed.py` | Verifies Plane readiness + populates seed data |
-| `scripts/generate_playwright.py` | Converts action log → Playwright test |
 | `scripts/post_comment.py` | Posts verdict to GitHub issue |
 | `.claude/skills/repro-agent/SKILL.md` | **Full skill definition — read before any run** |
 | `ARCHITECTURE.md` | System design, sequence diagram, layer ownership |

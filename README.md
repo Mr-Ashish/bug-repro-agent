@@ -15,8 +15,7 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --p
 3. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) to reproduce the bug
 4. **Parses** the agent's structured verdict: `VERDICT: REPRODUCED | <summary>`
 5. **Saves** evidence: screenshots, action log, GIF, video, full trace
-6. **Generates** a Playwright regression test from the action log
-7. **Reports** a rich reproduction report back to the GitHub issue (with `--post`)
+6. **Reports** a rich reproduction report back to the GitHub issue (with `--post`)
 
 Works on **any** Plane issue — not just pre-selected ones.
 
@@ -31,10 +30,10 @@ Fetch:   gh issue view → issue title + body
 Prompt:  generic template + issue body + Plane credentials + source-code context
 Agent:   browser-use (Python) → Claude Sonnet 4 via OpenRouter → Chrome CDP
 Target:  Plane (local docker-compose via Caddy — URL from .env PLANE_URL, default in scripts/drive.py)
-Output:  reproductions/<issue-number>/ (verdict, screenshots, traces, Playwright test)
+Output:  reproductions/<issue-number>/ (verdict, screenshots, traces, HTML report)
 ```
 
-**One script does everything:** `scripts/drive.py` fetches, prompts, drives, parses, saves, generates test, posts.
+**One script does everything:** `scripts/drive.py` fetches, prompts, drives, parses, saves, and posts.
 
 ## Output
 
@@ -47,7 +46,7 @@ reproductions/<N>/
 ├── agent-run.gif            # animated GIF of browser session
 ├── conversation.json        # full LLM conversation
 ├── verdict.md               # parsed verdict + agent result + run stats
-├── test_<N>.py              # auto-generated Playwright regression test
+├── report.html              # self-contained HTML report
 ├── github-comment.md        # GitHub comment (with --post)
 ├── error.txt                # error details (on crash/timeout)
 └── traces/
@@ -91,7 +90,7 @@ python scripts/seed.py populate
 ## Usage
 
 ```bash
-# Full E2E — reproduce + Playwright test + post verdict to GitHub
+# Full E2E — reproduce + post verdict to GitHub
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
 
 # With source-code context from the meta-agent (best results)
