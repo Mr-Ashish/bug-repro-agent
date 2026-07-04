@@ -30,13 +30,10 @@ Given a GitHub issue URL, this agent reproduces the bug in a running local Plane
 The full pipeline: **fetch → reproduce → generate Playwright test → post to GitHub**.
 
 ```bash
-# Standard run (reproduce + generate Playwright test)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N>
-
-# Full E2E (reproduce + Playwright test + post verdict to GitHub issue)
+# Standard run — always use --post so the verdict is reported on the GitHub issue
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post
 
-# Full E2E with source-code context (best results — adapt context to the bug's feature area)
+# With source-code context (best results)
 python scripts/drive.py --url https://github.com/makeplane/plane/issues/<N> --post \
   --context "Feature URL: /$PLANE_WORKSPACE/projects/<id>/<relevant-path>/"
 
@@ -45,7 +42,7 @@ python scripts/drive.py --issue <N> --dry-run          # prompt only, no agent r
 python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 ```
 
-**Always use `--post` for demo runs** so the verdict appears directly on the GitHub issue.
+**Always use `--post`.** The job isn't done until the verdict is posted to the GitHub issue.
 
 After drive.py completes, review the generated Playwright test:
 ```bash
@@ -60,7 +57,7 @@ Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
 ## Retry loop
 
-If the verdict is not `REPRODUCED`, read the artifacts in `reproductions/<N>/` (action-log, verdict, screenshots), diagnose what went wrong, improve the `--context`, and rerun. Max 3 attempts. Only `--post` on the final attempt.
+If the verdict is not `REPRODUCED`, read the artifacts in `reproductions/<N>/` (action-log, verdict, screenshots), diagnose what went wrong, improve the `--context`, and rerun with `--post`. Max 3 attempts.
 
 ## Identity — Reproducer, NOT Fixer
 
