@@ -150,7 +150,7 @@ TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 
 ## App
 - URL: {plane_url}
-- Credentials: {email} / {password}
+- Credentials: {email} / <secret>x_password</secret>
 - Workspace: {workspace}
 
 ## Bug (issue #{number})
@@ -159,20 +159,30 @@ TASK_TEMPLATE = """Reproduce a bug in Plane (project management app).
 
 {body}
 {context_section}
-## Principles
-- **You are a reproducer, not a fixer.** Execute the steps, observe, report.
-- **Navigate by URL when possible.** Plane URLs follow patterns like `{plane_url}/{workspace}/projects/<project-id>/issues/`, `.../settings/`, `.../cycles/`, `.../modules/`, `.../pages/`. Use the address bar instead of hunting through menus.
-- **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
-- **Use context menus.** Settings and actions in Plane are often behind ⋯ (three-dot) menus, not always in the main sidebar.
-- **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed. Don't panic.
-- **Budget your steps.** You have limited actions. If the same approach fails twice, switch strategies.
-
 ## Verdict format
 End your final message with exactly one line:
 
 VERDICT: REPRODUCED | <what you saw>
 VERDICT: NOT_REPRODUCED | <the feature worked correctly>
 VERDICT: INCONCLUSIVE | <why you couldn't determine>"""
+
+# ── System prompt extension ──────────────────────────────────
+# These principles live in extend_system_message so they survive
+# message compaction (the task body gets summarized, the system
+# prompt doesn't) and stay authoritative across all 50 steps.
+
+SYSTEM_PROMPT_EXTENSION = """
+## Bug Reproducer Principles
+You are a **bug reproducer**, not a fixer. Execute the steps, observe, report.
+
+- **Navigate by URL.** Plane URLs follow patterns like `<base>/<workspace>/projects/<id>/issues/`, `.../settings/`, `.../cycles/`, `.../modules/`, `.../pages/`. Use the address bar instead of hunting through menus.
+- **Every step should advance the reproduction.** Don't write files, update notes, or plan in text. Act in the browser.
+- **Use context menus.** Settings and actions in Plane are often behind ⋯ (three-dot) menus, not always in the main sidebar.
+- **Recover from blank pages.** After a page refresh, SPAs may show a blank screen while hydrating. Wait a moment, then re-navigate to the URL if needed.
+- **Budget your steps.** You have ≤50 actions. If the same approach fails twice, switch strategies immediately.
+- **Check the browser console.** If something looks visually correct but the bug is about data or state, use the evaluate action to run `JSON.stringify(console)` or inspect network responses.
+- **Screenshot before verdict.** Always take a screenshot of the final state as evidence before emitting your VERDICT line.
+"""
 
 
 def build_task(issue: dict, context: str = "") -> str:
@@ -195,7 +205,6 @@ def build_task(issue: dict, context: str = "") -> str:
     return TASK_TEMPLATE.format(
         plane_url=PLANE_URL,
         email=PLANE_EMAIL,
-        password=PLANE_PASSWORD,
         workspace=PLANE_WORKSPACE,
         number=issue["number"],
         title=issue["title"],
@@ -326,6 +335,7 @@ def save_artifacts(history: AgentHistoryList, issue: dict, repro_dir: Path) -> N
 - Screenshots: `evidence-*.png`
 - Action log: `action-log.json`
 - Full trace: `traces/full-trace.json`
+- Network trace: `network.har`
 - Agent GIF: `agent-run.gif`
 """
     (repro_dir / "verdict.md").write_text(verdict_md)
@@ -486,6 +496,12 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         screen={"width": 1920, "height": 1080},
         highlight_elements=True,
         record_video_dir=str(repro_dir),
+        # ── Improvements ──────────────────────────────────────
+        # 5. Capture HTTP traffic — surfaces API errors the agent
+        #    might miss visually (500s, failed fetches, etc.)
+        record_har_path=str(repro_dir / "network.har"),
+        # 6. Faster page interaction (default 0.25 → 0.15)
+        minimum_wait_page_load_time=0.15,
     )
     browser = Browser(browser_profile=profile)
 
@@ -525,6 +541,15 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         },
     )
 
+    # ── Step callback for live progress ─────────────────────
+    async def _on_step(browser_state, agent_output, step_num):
+        thought = ""
+        if agent_output:
+            thought = str(getattr(agent_output, "current_state", ""))[:100]
+        url = getattr(browser_state, "url", "") if browser_state else ""
+        url_short = url.split("?")[0][-60:] if url else ""
+        print(f"  step {step_num:>2}  {url_short:>60}  {thought}")
+
     # ── Run agent (crash-safe) ────────────────────────────────
     print("── Starting browser-use agent ──")
 
@@ -538,6 +563,18 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         sensitive_data={"x_password": PLANE_PASSWORD},
         max_failures=5,
         max_actions_per_step=5,
+        # ── Improvements ──────────────────────────────────────
+        # 1. Principles in system prompt survive message compaction
+        extend_system_message=SYSTEM_PROMPT_EXTENSION,
+        # 2. Replan faster when stuck (default 3 → 2)
+        planning_replan_on_stall=2,
+        # 3. Tighter loop detection (default 20 → 12) — catch
+        #    repetitive click loops sooner, save step budget
+        loop_detection_window=12,
+        # 4. Track LLM costs per run
+        calculate_cost=True,
+        # 5. Live progress callback
+        register_new_step_callback=_on_step,
     )
 
     history = None
