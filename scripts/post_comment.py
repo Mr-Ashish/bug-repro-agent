@@ -73,13 +73,6 @@ def read_action_log(repro_dir: Path) -> list[dict]:
         return []
 
 
-def read_playwright_test(repro_dir: Path, issue_number: str) -> str:
-    """Read the auto-generated Playwright test, if it exists."""
-    test_path = repro_dir / f"test_{issue_number}.py"
-    if not test_path.exists():
-        return ""
-    return test_path.read_text()
-
 
 def read_root_cause(repro_dir: Path) -> str:
     """Read root cause analysis from context.txt.
@@ -324,7 +317,6 @@ def build_comment(
     verdict: dict,
     steps: list[dict],
     image_urls: dict,
-    playwright_test: str = "",
     repro_dir: Path | None = None,
 ) -> str:
     """Build the rich GitHub Markdown comment body."""
@@ -406,14 +398,6 @@ def build_comment(
         parts.append(mask_password(root_cause))
         parts.append("")
 
-    # ── Regression test (full, not truncated)
-    if playwright_test:
-        parts.append("---\n")
-        parts.append("#### 🧪 Playwright Regression Test\n")
-        parts.append("```python")
-        parts.append(mask_password(playwright_test))
-        parts.append("```\n")
-
     # ── Footer
     parts.append("---\n")
     agent_repo_url = f"https://github.com/{AGENT_REPO}"
@@ -461,11 +445,8 @@ def main():
     print(f"── Reading artifacts from {repro_dir}/ ──")
     verdict = read_verdict(repro_dir)
     steps = read_action_log(repro_dir)
-    playwright_test = read_playwright_test(repro_dir, args.issue)
-
     print(f"  Verdict:      {verdict['status']}")
     print(f"  Steps:        {len(steps)}")
-    print(f"  PW test:      {'yes' if playwright_test else 'no'}")
 
     # Resolve evidence path from --evidence flag
     evidence_path = Path(args.evidence) if args.evidence else None
@@ -499,7 +480,7 @@ def main():
     print(f"  Images:       {list(image_urls.keys()) or 'none'}")
 
     # Build comment
-    comment = build_comment(args.issue, verdict, steps, image_urls, playwright_test, repro_dir=repro_dir)
+    comment = build_comment(args.issue, verdict, steps, image_urls, repro_dir=repro_dir)
 
     # Save to file
     comment_path = repro_dir / "github-comment.md"

@@ -13,7 +13,7 @@ Run these steps in order. Each step must succeed before moving to the next.
 
 **Use `docker-compose.yml` (NOT `docker-compose-local.yml`).** The local compose file only has backend services — no web frontend, no Caddy proxy, and the API image is missing `debug_toolbar`. The full compose file has all 13 services including Caddy on port 80 which unifies frontend and API.
 
-**Before starting**, patch docker-compose.yml to expose the API port directly. The SPA's auth redirects the browser to `localhost:3000` (VITE_WEB_BASE_URL), and the SPA on port 3000 calls the API at `localhost:8000` — but Docker doesn't expose 8000 by default. Without this, Playwright tests fail because the SPA can't reach the API.
+**Before starting**, patch docker-compose.yml to expose the API port directly. The SPA's auth redirects the browser to `localhost:3000` (VITE_WEB_BASE_URL), and the SPA on port 3000 calls the API at `localhost:8000` — but Docker doesn't expose 8000 by default. Without this, the SPA can't reach the API and browser automation fails.
 
 ```bash
 cd plane
@@ -122,7 +122,7 @@ Pass discoveries via `--context reproductions/<N>/context.txt`.
 ## What it does
 
 Given a GitHub issue URL, this agent reproduces the bug in a running local Plane instance.
-The full pipeline: **fetch → reproduce → generate Playwright test → post to GitHub**.
+The full pipeline: **fetch → reproduce → post to GitHub**.
 
 ```bash
 # Standard run — do NOT use --post; you will post after reviewing evidence
@@ -147,37 +147,17 @@ This is mandatory. Do NOT skip any step.
 ```bash
 ls reproductions/<N>/verdict.md         # must exist — the verdict
 ls reproductions/<N>/action-log.json    # must exist — step traces
-ls reproductions/<N>/test_<N>.py        # must exist — Playwright skeleton test
 ls reproductions/<N>/github-comment.md  # must exist — posted to GitHub
 ls reproductions/<N>/report.html        # must exist — self-contained HTML report
 ls reproductions/<N>/agent-run.gif      # should exist — GIF of browser session
 ls reproductions/<N>/evidence-*.png     # should exist — screenshots
 ```
 
-If any of `verdict.md`, `action-log.json`, `test_<N>.py`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
+If any of `verdict.md`, `action-log.json`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
 
-The `report.html` is a self-contained file (all images/video base64-embedded) you can open in any browser. It has tabbed views: Session video, Action log, Screenshots with lightbox, Root cause, and Playwright test.
+The `report.html` is a self-contained file (all images/video base64-embedded) you can open in any browser. It has tabbed views: Session video, Action log, Screenshots with lightbox, and Root cause.
 
-### 2. Refine the Playwright test
-
-drive.py generates a **skeleton** test — login fixture works, but post-login steps are raw action-log comments. You must rewrite it into a working test:
-
-1. Read `reproductions/<N>/test_<N>.py` (the skeleton) and `reproductions/<N>/action-log.json`
-2. The action log's `results[].extracted_content` tells you what was clicked/typed:
-   - `Clicked button "Continue"` → `page.locator('button:has-text("Continue")').click()`
-   - `Clicked a "Work items"` → `page.locator('a:has-text("Work items")').click()`
-   - `Clicked span "New work item"` → `page.locator('text="New work item"').click()`
-3. For input actions, check the thought field for `name=`, `placeholder=`, `id=` attributes
-4. Add assertions for the expected bug behavior (e.g. error toast text)
-5. **Port-aware navigation**: After login, the SPA redirects to `localhost:3000` (VITE_WEB_BASE_URL). Use `page.evaluate("window.location.origin")` to get the current origin and navigate relative to it, NOT to a hardcoded `BASE_URL`. Example:
-   ```python
-   origin = page.evaluate("window.location.origin")
-   page.goto(f"{origin}/{WORKSPACE}/projects/{PROJECT_ID}/issues/")
-   ```
-6. Run `pytest reproductions/<N>/test_<N>.py -v --base-url http://localhost:80` to verify it passes
-7. If it fails, fix selectors and rerun. Max 2 attempts.
-
-### 3. Pick the smoking-gun evidence screenshot
+### 2. Pick the smoking-gun evidence screenshot
 
 **You have vision. Use it.** Open each evidence screenshot and find the one that clearly shows the bug (error toast, broken UI, wrong state). Do NOT rely on heuristics.
 
@@ -188,7 +168,7 @@ ls reproductions/<N>/evidence-*.png
 
 Open each screenshot with `read_file` and look for the visual proof of the bug (error messages, toasts, broken layouts, wrong data). Pick the one that a human would point at and say "see, this is the bug."
 
-### 4. Post to GitHub with the chosen evidence
+### 3. Post to GitHub with the chosen evidence
 
 ```bash
 python scripts/post_comment.py --issue <N> --repo makeplane/plane \

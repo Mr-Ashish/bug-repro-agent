@@ -3,7 +3,7 @@
 render_report.py — Generate a self-contained HTML report from reproduction artifacts.
 
 Bundles verdict, root cause, action log, screenshots (base64-embedded),
-video, GIF, and Playwright test into a single .html file that opens
+video, and GIF into a single .html file that opens
 in any browser with no server needed.
 
 Usage:
@@ -62,9 +62,6 @@ def render_html(issue_number: str, repro_dir: Path) -> str:
     context_text = (repro_dir / "context.txt").read_text() if (repro_dir / "context.txt").exists() else ""
     action_log = read_json(repro_dir / "action-log.json") if (repro_dir / "action-log.json").exists() else []
     issue_data = read_json(repro_dir / "issue.json") if (repro_dir / "issue.json").exists() else {}
-    test_path = repro_dir / f"test_{issue_number}.py"
-    test_code = test_path.read_text() if test_path.exists() else ""
-
     # Parse verdict
     status = "UNKNOWN"
     summary = ""
@@ -155,11 +152,6 @@ def render_html(issue_number: str, repro_dir: Path) -> str:
     context_html = ""
     if context_text.strip():
         context_html = f'<pre class="context">{html.escape(mask_password(context_text))}</pre>'
-
-    # Playwright test
-    test_html = ""
-    if test_code.strip():
-        test_html = f'<pre class="code"><code>{html.escape(mask_password(test_code))}</code></pre>'
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -335,7 +327,6 @@ def render_html(issue_number: str, repro_dir: Path) -> str:
     <div class="tab" onclick="switchTab('steps')">📋 Steps ({len(action_log) if isinstance(action_log, list) else 0})</div>
     <div class="tab" onclick="switchTab('screenshots')">📸 Screenshots ({len(screenshots)})</div>
     <div class="tab" onclick="switchTab('rootcause')">🔬 Root Cause</div>
-    <div class="tab" onclick="switchTab('test')">🧪 Playwright Test</div>
   </div>
 
   <!-- Session tab -->
@@ -381,13 +372,6 @@ def render_html(issue_number: str, repro_dir: Path) -> str:
     </section>
   </div>
 
-  <!-- Test tab -->
-  <div id="tab-test" class="tab-content">
-    <section>
-      <h2>🧪 Playwright Regression Test</h2>
-      {test_html if test_html else '<p style="color:var(--text2);">No Playwright test generated</p>'}
-    </section>
-  </div>
 
 </div>
 

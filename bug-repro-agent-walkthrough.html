@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="luxury">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug Repro Agent — Deep Walkthrough</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/daisyui.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/daisyui@5.5.19/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.2.4/dist/index.global.js"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: {
+      primaryColor: "#1e293b",
+      primaryTextColor: "#e2e8f0",
+      primaryBorderColor: "#475569",
+      lineColor: "#64748b",
+      secondaryColor: "#0f172a",
+      tertiaryColor: "#1e293b",
+      fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      fontSize: "14px",
+      noteBkgColor: "#1e293b",
+      noteTextColor: "#e2e8f0",
+      noteBorderColor: "#475569",
+      actorBkg: "#1e293b",
+      actorTextColor: "#f1f5f9",
+      actorBorder: "#475569",
+      signalColor: "#94a3b8",
+      signalTextColor: "#e2e8f0",
+      labelBoxBkgColor: "#0f172a",
+      labelTextColor: "#e2e8f0"
+    }
+  });
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :where(.grid, .flex, .layout-grid, .layout-flex) > *,
+  :where([style*="display: grid"], [style*="display:grid"], [style*="display: flex"], [style*="display:flex"]) > * {
+    min-width: 0;
+  }
+  :where(p, h1, h2, h3, h4, h5, h6, li, dd, blockquote, figcaption, td, th, .badge, .label) {
+    overflow-wrap: anywhere;
+  }
+  :where(img, svg, video, canvas, iframe) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  /* Sidebar TOC */
+  .toc-sidebar {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .toc-link {
+    display: block;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: oklch(var(--bc) / 0.6);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .toc-link:hover, .toc-link.active {
+    color: oklch(var(--p));
+    border-left-color: oklch(var(--p));
+    background: oklch(var(--p) / 0.05);
+  }
+  .toc-link.sub { padding-left: 24px; font-size: 12px; }
+
+  /* Code blocks */
+  pre.code-block {
+    background: oklch(var(--b2));
+    border: 1px solid oklch(var(--bc) / 0.1);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    color: oklch(var(--bc) / 0.9);
+  }
+  pre.code-block .comment { color: oklch(var(--bc) / 0.4); }
+  pre.code-block .keyword { color: oklch(var(--p)); }
+  pre.code-block .string { color: oklch(var(--su)); }
+  pre.code-block .fn { color: oklch(var(--in)); }
+
+  /* Callout boxes */
+  .callout {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .callout-concept { background: oklch(var(--in) / 0.08); border-left: 3px solid oklch(var(--in)); }
+  .callout-warning { background: oklch(var(--wa) / 0.08); border-left: 3px solid oklch(var(--wa)); }
+  .callout-key { background: oklch(var(--su) / 0.08); border-left: 3px solid oklch(var(--su)); }
+  .callout-force { background: oklch(var(--p) / 0.08); border-left: 3px solid oklch(var(--p)); }
+
+  /* Section anchors */
+  section[id] { scroll-margin-top: 2rem; }
+
+  /* Mermaid diagram container */
+  .mermaid-wrap {
+    background: oklch(var(--b2));
+    border: 1px solid oklch(var(--bc) / 0.1);
+    border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+
+  /* File card */
+  .file-card {
+    background: oklch(var(--b2));
+    border: 1px solid oklch(var(--bc) / 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .file-card-header {
+    background: oklch(var(--b3));
+    padding: 8px 16px;
+    font-family: monospace;
+    font-size: 13px;
+    color: oklch(var(--bc) / 0.7);
+    border-bottom: 1px solid oklch(var(--bc) / 0.1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Quiz */
+  .quiz-option { cursor: pointer; transition: all 0.15s; }
+  .quiz-option:hover { background: oklch(var(--p) / 0.05); }
+  .quiz-option.correct { background: oklch(var(--su) / 0.1); border-color: oklch(var(--su)); }
+  .quiz-option.incorrect { background: oklch(var(--er) / 0.1); border-color: oklch(var(--er)); }
+
+  /* Hero gradient */
+  .hero-gradient {
+    background: linear-gradient(135deg, oklch(var(--b1)) 0%, oklch(var(--b2)) 50%, oklch(var(--b3)) 100%);
+  }
+</style>
+</head>
+<body class="bg-base-100 text-base-content">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  HERO                                                      -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="hero-gradient py-16 px-6 border-b border-base-content/5">
+  <div class="max-w-5xl mx-auto text-center">
+    <div class="badge badge-soft badge-primary mb-4">Browser-Use Hackathon · July 4, 2026 · Bengaluru</div>
+    <h1 class="text-3xl md:text-5xl font-bold mb-4 overflow-wrap-anywhere">🔍 Bug Repro Agent</h1>
+    <p class="text-lg text-base-content/60 max-w-2xl mx-auto mb-6">
+      Point it at any GitHub issue. Watch it reproduce the bug — live.
+      No hardcoded steps. One generic prompt. Full evidence chain.
+    </p>
+    <div class="flex flex-wrap justify-center gap-3">
+      <div class="badge badge-outline gap-1">🐍 Pure Python</div>
+      <div class="badge badge-outline gap-1">🌐 browser-use</div>
+      <div class="badge badge-outline gap-1">🤖 Claude Sonnet 4</div>
+      <div class="badge badge-outline gap-1">🎭 Playwright</div>
+      <div class="badge badge-outline gap-1">🐳 Docker</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!--  MAIN LAYOUT: SIDEBAR + CONTENT                            -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="max-w-7xl mx-auto px-4 py-8 flex gap-8">
+
+  <!-- TOC Sidebar (hidden on mobile) -->
+  <nav class="hidden lg:block w-56 shrink-0">
+    <div class="toc-sidebar">
+      <p class="text-xs font-bold uppercase tracking-widest text-base-content/40 mb-3 px-3">Contents</p>
+      <a href="#background" class="toc-link">Background</a>
+      <a href="#problem" class="toc-link sub">The Problem</a>
+      <a href="#identity" class="toc-link sub">Identity: Reproducer</a>
+      <a href="#architecture" class="toc-link">Architecture</a>
+      <a href="#layers" class="toc-link sub">System Layers</a>
+      <a href="#data-flow" class="toc-link sub">Data Flow</a>
+      <a href="#verdict-protocol" class="toc-link sub">Verdict Protocol</a>
+      <a href="#code-walkthrough" class="toc-link">Code Walkthrough</a>
+      <a href="#drive-py" class="toc-link sub">drive.py — The Brain</a>
+      <a href="#seed-py" class="toc-link sub">seed.py — Environment</a>
+      <a href="#post-comment" class="toc-link sub">post_comment.py</a>
+      <a href="#generate-pw" class="toc-link sub">generate_playwright.py</a>
+      <a href="#render-report" class="toc-link sub">render_report.py</a>
+      <a href="#artifacts" class="toc-link sub">Artifact Bundle</a>
+      <a href="#demo" class="toc-link">Demo Walkthrough</a>
+      <a href="#demo-beat-1" class="toc-link sub">Beat 1: Live Repro</a>
+      <a href="#demo-beat-2" class="toc-link sub">Beat 2: Evidence</a>
+      <a href="#demo-beat-3" class="toc-link sub">Beat 3: GitHub Post</a>
+      <a href="#quiz" class="toc-link">Quiz</a>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="flex-1 min-w-0 max-w-4xl">
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SECTION 1: BACKGROUND                                  -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section id="background" class="mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span class="text-primary">§1</span> Background
+      </h2>
+
+      <div id="problem" class="mb-8">
+        <h3 class="text-lg font-semibold mb-3">The Problem</h3>
+        <p class="mb-4 text-base-content/80 leading-relaxed">
+          Open-source projects drown in bug reports. Plane — an open-source project management tool competing with Jira and Linear — has <strong>791 open issues</strong>, of which <strong>289 are bugs</strong>. Many of those bug reports are well-written, with clear steps to reproduce. But maintainers still have to <em>manually walk through each one</em> — launch the app, click through menus, type the right input, observe the failure — before they can even begin fixing it.
+        </p>
+        <p class="mb-4 text-base-content/80 leading-relaxed">
+          That manual reproduction loop is the bottleneck. It takes 5–15 minutes per issue, assumes a working local environment, and produces no reusable artifact. If the maintainer's setup differs from the reporter's, the bug may not even appear — and the issue gets tagged "cannot reproduce" and forgotten.
+        </p>
+
+        <div class="callout callout-concept">
+          <strong>💡 Core insight:</strong> A bug report already contains the reproduction plan in natural language. An LLM can read those steps, drive a browser, and report what it sees — no per-issue scripting needed.
+        </div>
+
+        <p class="text-base-content/80 leading-relaxed">
+          That's what <strong>repro-agent</strong> does. Given a GitHub issue URL, it fetches the bug report, injects it into a generic prompt template, launches a browser automation agent, and lets the LLM figure out the steps. The output: screenshots, an action log, a structured verdict (<code>REPRODUCED</code> / <code>NOT_REPRODUCED</code> / <code>INCONCLUSIVE</code>), a Playwright regression test, and a rich report posted back to the issue.
+        </p>
+      </div>
+
+      <div id="identity" class="mb-8">
+        <h3 class="text-lg font-semibold mb-3">Identity: Reproducer, Not Fixer</h3>
+        <p class="mb-4 text-base-content/80 leading-relaxed">
+          This is a deliberate design constraint that shapes everything. The agent never proposes patches, never edits source code, never says "FIXED." Its job is strictly observational: execute the reported steps, capture what happens, and tell you whether the bug is real. This constraint exists because reproduction and repair require fundamentally different capabilities — and conflating them produces neither well.
+        </p>
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead><tr><th>Verdict</th><th>Meaning</th><th>Exit Code</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-success badge-sm">REPRODUCED</span></td><td>The reported bug behavior was observed</td><td><code>0</code></td></tr>
+              <tr><td><span class="badge badge-error badge-sm">NOT_REPRODUCED</span></td><td>Feature worked correctly — bug not confirmed</td><td><code>1</code></td></tr>
+              <tr><td><span class="badge badge-warning badge-sm">INCONCLUSIVE</span></td><td>Evidence ambiguous — can't confirm or deny</td><td><code>2</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-force mt-4">
+          <strong>🔑 Why this matters:</strong> By constraining the agent to observation-only, we can trust its output without reviewing code changes. The verdict is a <em>fact claim about what the agent saw</em>, not a judgment about correctness. This makes the system useful even when the bug turns out to be "working as designed."
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SECTION 2: ARCHITECTURE                                -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section id="architecture" class="mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span class="text-primary">§2</span> Architecture
+      </h2>
+
+      <div id="layers" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3">How does data flow from a GitHub issue URL to a posted verdict?</h3>
+        <p class="mb-4 text-base-content/80">
+          The system has four layers, each with a distinct responsibility. The key design decision: <strong>only one layer reasons about the bug</strong>. Everything else is infrastructure.
+        </p>
+
+        <div class="mermaid-wrap mb-6">
+          <pre class="mermaid">
+flowchart TD
+    A["🧑 Human\n/repro-agent #9329"] -->|invokes| B
+    B["🤖 Grok Meta-Agent\nreads SKILL.md\norchestrates scripts"] -->|"python scripts/seed.py check"| C
+    C["🌱 seed.py\nverifies Plane ready\npopulates test data"] -->|"exit 0 = ready"| B
+    B -->|"python scripts/drive.py --issue 9329"| D
+    D["⚙️ drive.py\nfetch → prompt → agent → artifacts"] -->|"in-process"| E
+    E["🧠 browser-use Agent\nClaude Sonnet 4\nONLY layer that reasons"] -->|"CDP WebSocket"| F
+    F["🌐 Chrome → Plane\nDocker: Next.js + Django\n+ Postgres + Redis"]
+    D -->|"exit code + artifacts"| B
+    B -->|"python scripts/post_comment.py"| G
+    G["📮 post_comment.py\nbuild Markdown + upload\npost to GitHub issue"]
+
+    style E fill:#1e3a5f,stroke:#3b82f6,stroke-width:2px,color:#e2e8f0
+          </pre>
+        </div>
+
+        <div class="callout callout-key">
+          <strong>✅ Key architectural choice:</strong> The browser-use agent (blue box) is the <em>only</em> layer that understands bugs. <code>drive.py</code> doesn't know what the bug is — it just plumbs the issue text into a prompt and saves whatever comes back. This means the system works on <strong>any</strong> issue without modification.
+        </div>
+      </div>
+
+      <div id="data-flow" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3">What happens during a single reproduction run?</h3>
+        <p class="mb-4 text-base-content/80">
+          Here's the end-to-end sequence for <code>python scripts/drive.py --issue 9329 --post</code>:
+        </p>
+
+        <div class="mermaid-wrap mb-6">
+          <pre class="mermaid">
+sequenceDiagram
+    participant D as drive.py
+    participant GH as gh CLI
+    participant A as browser-use Agent
+    participant C as Chrome (CDP)
+    participant P as Plane
+
+    Note over D: Phase 1 — Preflight
+    D->>C: TCP connect to CDP port 9222
+    D->>P: HTTP GET /api/users/me/
+    D->>GH: gh auth status
+
+    Note over D: Phase 2 — Fetch & Prompt
+    D->>GH: gh issue view 9329 --json title,body,url
+    GH-->>D: {title, body, url, number}
+    D->>D: TASK_TEMPLATE + issue body → prompt
+
+    Note over D,P: Phase 3 — Agent Run (max 50 steps)
+    D->>A: Agent(task=prompt, llm=claude-sonnet-4)
+    A->>C: Navigate to Plane login
+    C->>P: GET /
+    A->>C: Type email, password, submit
+    C->>P: POST /auth/sign-in/
+    A->>C: Navigate to project → issues
+    A->>C: Execute reproduction steps
+    A->>A: Observe → Reason → Conclude
+    A-->>D: "VERDICT: REPRODUCED | ..."
+
+    Note over D: Phase 4 — Artifacts
+    D->>D: Save action-log.json, evidence-*.png
+    D->>D: Save verdict.md, agent-run.gif
+    D->>D: Generate Playwright test
+    D->>D: Render HTML report
+    D->>D: Parse verdict → exit code 0
+          </pre>
+        </div>
+
+        <p class="text-base-content/80">
+          Notice that <code>drive.py</code> saves artifacts <em>before</em> closing the browser. This is intentional — the browser connection can hang if Chrome is unresponsive, but the agent history is already in memory. Artifacts survive crashes.
+        </p>
+      </div>
+
+      <div id="verdict-protocol" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3">How does the verdict get parsed?</h3>
+        <p class="mb-4 text-base-content/80">
+          The agent is instructed to emit a structured line in its final message. <code>drive.py</code> scans backward through the output looking for this pattern:
+        </p>
+
+        <div class="file-card mb-4">
+          <div class="file-card-header">📄 Verdict regex — <code>scripts/drive.py</code></div>
+          <pre class="code-block">VERDICT_PATTERN = re.compile(
+    r"VERDICT:\s*(REPRODUCED|NOT_REPRODUCED|INCONCLUSIVE)\s*\|\s*(.+)",
+    re.IGNORECASE,
+)</pre>
+        </div>
+
+        <p class="text-base-content/80">
+          This is the entire verdict parsing logic — one regex. The simplicity is intentional: no per-issue matchers, no keyword extraction, no NLP. The agent is told the exact format to use, and the regex either finds it or defaults to <code>INCONCLUSIVE</code>. The verdict maps directly to an exit code, which the meta-agent (Grok) uses to decide what to do next.
+        </p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SECTION 3: CODE WALKTHROUGH                            -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section id="code-walkthrough" class="mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span class="text-primary">§3</span> Code Walkthrough
+      </h2>
+
+      <p class="mb-6 text-base-content/80">
+        Five Python scripts, each with a single job. No classes to instantiate, no framework to understand — just functions you can read top to bottom.
+      </p>
+
+      <!-- ── drive.py ────────────────────────────────────────── -->
+      <div id="drive-py" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">1</span> drive.py — The Brain
+          <span class="badge badge-ghost badge-xs">745 lines</span>
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          One script does everything: fetch, prompt, drive, parse, save. This is the only file you need to understand to grasp how the system works.
+        </p>
+
+        <div class="callout callout-concept mb-4">
+          <strong>💡 Design force:</strong> Why one script instead of a pipeline? Because each phase depends on the previous one's output in subtle ways — the prompt needs the issue body, the agent needs the prompt, artifacts need the history object. Splitting into separate processes would mean serializing intermediate state to disk, adding coordination overhead, and making debugging harder. For a hackathon project, colocation beats modularity.
+        </div>
+
+        <h4 class="font-semibold mb-2 text-sm uppercase tracking-wide text-base-content/50">CDP Auto-Discovery</h4>
+        <p class="mb-3 text-base-content/80 text-sm">
+          Instead of hardcoding a WebSocket URL, <code>drive.py</code> hits Chrome's debug API to find the active session:
+        </p>
+        <div class="file-card mb-4">
+          <div class="file-card-header">📄 scripts/drive.py · <code>discover_cdp_url()</code></div>
+          <pre class="code-block"><span class="keyword">def</span> <span class="fn">discover_cdp_url</span>(debug_port: int = 9222) -> str:
+    <span class="comment">"""Auto-discover Chrome CDP browser-level WebSocket URL."""</span>
+    resp = urllib.request.urlopen(
+        f<span class="string">"http://localhost:{debug_port}/json/version"</span>, timeout=3
+    )
+    data = json.loads(resp.read())
+    ws_url = data[<span class="string">"webSocketDebuggerUrl"</span>]
+    <span class="keyword">return</span> ws_url</pre>
+        </div>
+
+        <h4 class="font-semibold mb-2 text-sm uppercase tracking-wide text-base-content/50">The Prompt Template</h4>
+        <p class="mb-3 text-base-content/80 text-sm">
+          The generic template that works for <em>any</em> issue. The bug report body is injected as-is — the LLM interprets the steps:
+        </p>
+        <div class="file-card mb-4">
+          <div class="file-card-header">📄 scripts/drive.py · <code>TASK_TEMPLATE</code> (simplified)</div>
+          <pre class="code-block">TASK_TEMPLATE = <span class="string">"""Reproduce a bug in Plane (project management app).
+
+## App
+- URL: {plane_url}
+- Credentials: {email} / &lt;secret&gt;
+- Workspace: {workspace}
+
+## Bug (issue #{number})
+{title}
+{body}
+
+## Principles
+- You are a reproducer, not a fixer.
+- Navigate by URL when possible.
+- Every step should advance the reproduction.
+- Budget your steps.
+
+## Verdict format
+VERDICT: REPRODUCED | &lt;what you saw&gt;
+VERDICT: NOT_REPRODUCED | &lt;feature worked correctly&gt;
+VERDICT: INCONCLUSIVE | &lt;why you couldn't determine&gt;"""</span></pre>
+        </div>
+
+        <div class="callout callout-force">
+          <strong>🔑 The issue IS the plan.</strong> No per-issue scripting. No hardcoded click sequences. The raw issue body becomes the reproduction plan. This is the core bet of the project — and it works because modern LLMs are surprisingly good at parsing informal bug reports into actionable steps.
+        </div>
+
+        <h4 class="font-semibold mb-2 mt-6 text-sm uppercase tracking-wide text-base-content/50">System Prompt Extension</h4>
+        <p class="mb-3 text-base-content/80 text-sm">
+          The task prompt can get summarized during long runs (browser-use compacts message history). Critical instructions live in <code>extend_system_message</code> so they survive compaction:
+        </p>
+        <div class="file-card mb-4">
+          <div class="file-card-header">📄 scripts/drive.py · <code>SYSTEM_PROMPT_EXTENSION</code> (key parts)</div>
+          <pre class="code-block"><span class="comment"># Action format reference — prevents malformed actions</span>
+- <span class="string">click</span>: {"index": 123}
+- <span class="string">input</span>: {"index": 123, "text": "hello"}
+- <span class="string">navigate</span>: {"url": "http://..."}
+- <span class="string">done</span>: {"text": "VERDICT: ..."}
+
+<span class="comment"># One action per step — prevents the agent from</span>
+<span class="comment"># doing too much between observations</span>
+max_actions_per_step=1</pre>
+        </div>
+
+        <h4 class="font-semibold mb-2 mt-6 text-sm uppercase tracking-wide text-base-content/50">Agent Configuration</h4>
+        <p class="mb-3 text-base-content/80 text-sm">
+          The agent is tuned for reliability, not speed. Key parameters:
+        </p>
+        <div class="overflow-x-auto">
+          <table class="table table-sm table-zebra">
+            <thead><tr><th>Parameter</th><th>Value</th><th>Why</th></tr></thead>
+            <tbody>
+              <tr><td><code>max_steps</code></td><td>50</td><td>Budget — agent must conclude with whatever evidence it has</td></tr>
+              <tr><td><code>max_actions_per_step</code></td><td>1</td><td>One action, one observation — prevents runaway sequences</td></tr>
+              <tr><td><code>planning_replan_on_stall</code></td><td>2</td><td>Replan after 2 stuck steps (default: 3)</td></tr>
+              <tr><td><code>loop_detection_window</code></td><td>12</td><td>Catch repetitive clicks sooner (default: 20)</td></tr>
+              <tr><td><code>max_failures</code></td><td>5</td><td>Tolerate 5 failed actions before aborting</td></tr>
+              <tr><td><code>use_vision</code></td><td><code>"auto"</code></td><td>Screenshots when needed, DOM-only when not</td></tr>
+              <tr><td><code>temperature</code></td><td>0.0</td><td>Deterministic — same input should yield same steps</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── seed.py ────────────────────────────────────────── -->
+      <div id="seed-py" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">2</span> seed.py — Environment Readiness
+          <span class="badge badge-ghost badge-xs">405 lines</span>
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          Before the agent can reproduce anything, Plane needs to be running with test data. <code>seed.py</code> handles both verification (<code>check</code>) and setup (<code>populate</code>).
+        </p>
+
+        <p class="mb-3 text-base-content/80 text-sm">
+          The <code>PlaneAPI</code> class uses <strong>only stdlib</strong> — no <code>requests</code>, no <code>httpx</code>. It authenticates via Plane's session cookie flow (same as the web frontend) and talks to the internal Django API. The seed data is intentionally crafted for edge-case testing:
+        </p>
+
+        <div class="overflow-x-auto mb-4">
+          <table class="table table-sm">
+            <thead><tr><th>Seed Issue</th><th>Why It Exists</th></tr></thead>
+            <tbody>
+              <tr><td>Normal title (short)</td><td>Baseline — verify standard flow works</td></tr>
+              <tr><td><code>"A" × 256</code></td><td>Triggers the 255-char validation bug (issue #9329)</td></tr>
+              <tr><td>XSS in title</td><td>Tests special character handling</td></tr>
+              <tr><td>Parent for sub-issues</td><td>Tests hierarchy/expand UI</td></tr>
+              <tr><td>Cycle + module member</td><td>Cross-feature testing</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout callout-warning">
+          <strong>⚠️ Watch out:</strong> <code>seed.py</code> talks to Plane's <em>internal</em> API at <code>/api/...</code>. These are not documented public endpoints — they're the same AJAX calls the React frontend makes. If Plane's API changes, seed.py breaks. This is fine for a hackathon, but a production tool would need a proper integration layer.
+        </div>
+      </div>
+
+      <!-- ── post_comment.py ──────────────────────────────── -->
+      <div id="post-comment" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">3</span> post_comment.py — GitHub Reporter
+          <span class="badge badge-ghost badge-xs">530 lines</span>
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          Reads every artifact from <code>reproductions/&lt;N&gt;/</code>, builds a rich Markdown comment, and posts it to the GitHub issue. The comment includes embedded video, a step trace table, a smoking-gun screenshot, root cause analysis, and the Playwright regression test.
+        </p>
+        <p class="mb-4 text-base-content/80">
+          The trickiest part: <strong>image hosting</strong>. GitHub issue comments can't embed local files. The script commits the GIF, video, and evidence screenshot to the repro-agent's own repo, pushes, and uses <code>raw.githubusercontent.com</code> URLs. Crude but effective — every image is permanently linked.
+        </p>
+
+        <div class="callout callout-key">
+          <strong>✅ Password masking:</strong> The <code>mask_password()</code> function runs on every piece of text before it's written to the comment. Plane credentials (<code>PLANE_PASSWORD</code>) never appear in the GitHub comment, action log excerpts, or agent thoughts.
+        </div>
+      </div>
+
+      <!-- ── generate_playwright.py ──────────────────────── -->
+      <div id="generate-pw" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">4</span> generate_playwright.py — Test Generator
+          <span class="badge badge-ghost badge-xs">230 lines</span>
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          Converts the action log into a <strong>skeleton</strong> Playwright test. The login fixture works out of the box (handles Plane's two-step email → password flow). Post-login steps are dumped as structured comments — the meta-agent (Grok) rewrites them into real selectors and assertions.
+        </p>
+        <p class="text-base-content/80 text-sm">
+          This two-stage approach exists because browser-use's action format (<code>click element #47</code>) doesn't map to stable Playwright selectors. The element indices change every page load. The meta-agent, reading the action log's <code>extracted_content</code> field (e.g., <code>"Clicked button 'Continue'"</code>), can produce durable selectors like <code>page.locator('button:has-text("Continue")')</code>.
+        </p>
+      </div>
+
+      <!-- ── render_report.py ────────────────────────────── -->
+      <div id="render-report" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">5</span> render_report.py — HTML Report
+          <span class="badge badge-ghost badge-xs">475 lines</span>
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          Generates a self-contained HTML report with all images and video <strong>base64-embedded</strong>. Open it in any browser, no server needed. Features: tabbed navigation (Session / Steps / Screenshots / Root Cause / Playwright Test), a screenshot lightbox with keyboard nav, and a dark theme matching GitHub's aesthetic.
+        </p>
+      </div>
+
+      <!-- ── Artifact bundle ─────────────────────────────── -->
+      <div id="artifacts" class="mb-10">
+        <h3 class="text-lg font-semibold mb-3 flex items-center gap-2">
+          <span class="badge badge-primary badge-sm">📦</span> The Artifact Bundle
+        </h3>
+        <p class="mb-4 text-base-content/80">
+          Every run produces a complete evidence package in <code>reproductions/&lt;N&gt;/</code>:
+        </p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">📋 issue.json</h4>
+              <p class="text-xs text-base-content/60">Fetched issue — title, body, URL. Proves which bug was targeted.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">📝 task-prompt.txt</h4>
+              <p class="text-xs text-base-content/60">Exact prompt sent to the LLM. Full reproducibility.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">🔍 action-log.json</h4>
+              <p class="text-xs text-base-content/60">Every step: thought, action, result, URL. The agent's reasoning chain.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">📸 evidence-*.png</h4>
+              <p class="text-xs text-base-content/60">Screenshots at each step. Visual proof of what the agent saw.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">🎬 agent-run.gif</h4>
+              <p class="text-xs text-base-content/60">Animated GIF of the full browser session.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">✅ verdict.md</h4>
+              <p class="text-xs text-base-content/60">Parsed verdict + stats (steps, duration, URLs visited).</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">🧪 test_&lt;N&gt;.py</h4>
+              <p class="text-xs text-base-content/60">Auto-generated Playwright regression test skeleton.</p>
+            </div>
+          </div>
+          <div class="card card-border bg-base-200 card-sm">
+            <div class="card-body">
+              <h4 class="card-title text-sm">📊 report.html</h4>
+              <p class="text-xs text-base-content/60">Self-contained HTML report — all media embedded, no server needed.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SECTION 4: DEMO WALKTHROUGH                            -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section id="demo" class="mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span class="text-primary">§4</span> Demo Walkthrough
+      </h2>
+      <p class="mb-6 text-base-content/80">
+        Three beats, ~4 minutes total. The star issue: <strong>#9329</strong> — inline work item creation shows a generic error when the title exceeds 255 characters. Fast, visual, always reproduces.
+      </p>
+
+      <ul class="steps steps-vertical w-full mb-8">
+        <li id="demo-beat-1" class="step step-primary">
+          <div class="text-left ml-4">
+            <h4 class="font-semibold">Beat 1 — Live Reproduction <span class="badge badge-xs">~2 min</span></h4>
+            <p class="text-sm text-base-content/60 mt-1">Run the command live. Audience watches Chrome move autonomously — navigating to Plane, logging in, finding the issue list, typing a 256-char title, and observing the error toast.</p>
+            <div class="file-card mt-3">
+              <div class="file-card-header">💻 Terminal</div>
+              <pre class="code-block">python scripts/drive.py \
+  --url https://github.com/makeplane/plane/issues/9329 \
+  --context reproductions/9329/context.txt</pre>
+            </div>
+            <p class="text-xs text-base-content/40 mt-2">
+              The agent completes in ~43 seconds, 4 steps. The audience sees real-time step output in the terminal.
+            </p>
+          </div>
+        </li>
+        <li id="demo-beat-2" class="step step-primary">
+          <div class="text-left ml-4">
+            <h4 class="font-semibold">Beat 2 — Evidence Inspection <span class="badge badge-xs">~1 min</span></h4>
+            <p class="text-sm text-base-content/60 mt-1">Open <code>reproductions/9329/report.html</code> in a browser. Walk through the tabs: session video, step-by-step action log, the smoking-gun screenshot showing the generic error toast, and the auto-generated Playwright test.</p>
+          </div>
+        </li>
+        <li id="demo-beat-3" class="step step-primary">
+          <div class="text-left ml-4">
+            <h4 class="font-semibold">Beat 3 — GitHub Report <span class="badge badge-xs">~30s</span></h4>
+            <p class="text-sm text-base-content/60 mt-1">Post the rich reproduction report back to the original GitHub issue:</p>
+            <div class="file-card mt-3">
+              <div class="file-card-header">💻 Terminal</div>
+              <pre class="code-block">python scripts/post_comment.py --issue 9329 \
+  --evidence reproductions/9329/evidence-03.png</pre>
+            </div>
+            <p class="text-xs text-base-content/40 mt-2">
+              The comment includes inline video, a step trace table, the evidence screenshot, root cause analysis, and the Playwright regression test. All posted as one rich Markdown comment.
+            </p>
+          </div>
+        </li>
+      </ul>
+
+      <div class="callout callout-concept">
+        <strong>💡 Demo impact:</strong> The punchline is the <em>generality</em>. After showing #9329, mention that the same command works on any of the 289 bug issues — no per-issue scripting. The template is generic; the LLM adapts. That's the value prop.
+      </div>
+
+      <h4 class="font-semibold mt-6 mb-3">Other Demo-Worthy Issues</h4>
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead><tr><th>#</th><th>Bug</th><th>Bug Class</th><th>Why It's Good for Demo</th></tr></thead>
+          <tbody>
+            <tr><td><strong>9329</strong></td><td>255+ char title → generic error</td><td>form-validation</td><td>Fast (4 steps, 43s), visual error toast</td></tr>
+            <tr><td><strong>9050</strong></td><td>Deleted stickies reappear on reload</td><td>state-persistence</td><td>Dramatic — delete, refresh, items are back</td></tr>
+            <tr><td><strong>9124</strong></td><td>Sub-task expand requires 3 clicks</td><td>ui-interaction</td><td>Easy to see the extra clicks in the GIF</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!--  SECTION 5: INTERACTIVE QUIZ                            -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section id="quiz" class="mb-16">
+      <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <span class="text-primary">§5</span> Check Your Understanding
+      </h2>
+
+      <!-- Q1 -->
+      <div class="card card-border bg-base-200 mb-4" id="q1">
+        <div class="card-body">
+          <h3 class="card-title text-sm">Q1: Which layer reasons about the bug?</h3>
+          <div class="flex flex-col gap-2 mt-3">
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q1')">
+              <input type="radio" name="q1" class="radio radio-sm"> <span>drive.py — it builds the prompt</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="true" onclick="checkAnswer(this, 'q1')">
+              <input type="radio" name="q1" class="radio radio-sm"> <span>The browser-use agent (Claude Sonnet 4)</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q1')">
+              <input type="radio" name="q1" class="radio radio-sm"> <span>Grok (meta-agent) — it orchestrates everything</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q1')">
+              <input type="radio" name="q1" class="radio radio-sm"> <span>post_comment.py — it analyzes the results</span>
+            </label>
+          </div>
+          <div class="explanation hidden mt-3 text-sm text-base-content/70"></div>
+        </div>
+      </div>
+
+      <!-- Q2 -->
+      <div class="card card-border bg-base-200 mb-4" id="q2">
+        <div class="card-body">
+          <h3 class="card-title text-sm">Q2: Why does the system prompt extension exist separately from the task prompt?</h3>
+          <div class="flex flex-col gap-2 mt-3">
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q2')">
+              <input type="radio" name="q2" class="radio radio-sm"> <span>To keep the code organized</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q2')">
+              <input type="radio" name="q2" class="radio radio-sm"> <span>To avoid hitting token limits</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="true" onclick="checkAnswer(this, 'q2')">
+              <input type="radio" name="q2" class="radio radio-sm"> <span>System prompts survive message compaction — task prompts get summarized</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q2')">
+              <input type="radio" name="q2" class="radio radio-sm"> <span>OpenRouter requires them to be separate</span>
+            </label>
+          </div>
+          <div class="explanation hidden mt-3 text-sm text-base-content/70"></div>
+        </div>
+      </div>
+
+      <!-- Q3 -->
+      <div class="card card-border bg-base-200 mb-4" id="q3">
+        <div class="card-body">
+          <h3 class="card-title text-sm">Q3: Why does drive.py save artifacts before closing the browser?</h3>
+          <div class="flex flex-col gap-2 mt-3">
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q3')">
+              <input type="radio" name="q3" class="radio radio-sm"> <span>To capture one final screenshot</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="true" onclick="checkAnswer(this, 'q3')">
+              <input type="radio" name="q3" class="radio radio-sm"> <span>browser.close() can hang — artifacts come from in-memory history and must be saved first</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q3')">
+              <input type="radio" name="q3" class="radio radio-sm"> <span>The browser needs to be open to write files</span>
+            </label>
+          </div>
+          <div class="explanation hidden mt-3 text-sm text-base-content/70"></div>
+        </div>
+      </div>
+
+      <!-- Q4 -->
+      <div class="card card-border bg-base-200 mb-4" id="q4">
+        <div class="card-body">
+          <h3 class="card-title text-sm">Q4: How does post_comment.py host images in the GitHub comment?</h3>
+          <div class="flex flex-col gap-2 mt-3">
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q4')">
+              <input type="radio" name="q4" class="radio radio-sm"> <span>Uploads to Imgur</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q4')">
+              <input type="radio" name="q4" class="radio radio-sm"> <span>Base64-encodes them inline in the Markdown</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="true" onclick="checkAnswer(this, 'q4')">
+              <input type="radio" name="q4" class="radio radio-sm"> <span>Git-commits them to the repro-agent repo, then uses raw.githubusercontent.com URLs</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q4')">
+              <input type="radio" name="q4" class="radio radio-sm"> <span>Uses GitHub's attachment upload API</span>
+            </label>
+          </div>
+          <div class="explanation hidden mt-3 text-sm text-base-content/70"></div>
+        </div>
+      </div>
+
+      <!-- Q5 -->
+      <div class="card card-border bg-base-200 mb-4" id="q5">
+        <div class="card-body">
+          <h3 class="card-title text-sm">Q5: What happens if the agent doesn't emit a VERDICT line?</h3>
+          <div class="flex flex-col gap-2 mt-3">
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q5')">
+              <input type="radio" name="q5" class="radio radio-sm"> <span>drive.py crashes with a ParseError</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="true" onclick="checkAnswer(this, 'q5')">
+              <input type="radio" name="q5" class="radio radio-sm"> <span>It defaults to INCONCLUSIVE (exit code 2)</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q5')">
+              <input type="radio" name="q5" class="radio radio-sm"> <span>It retries the entire agent run</span>
+            </label>
+            <label class="quiz-option flex items-center gap-3 p-3 rounded-lg border border-base-content/10 cursor-pointer" data-correct="false" onclick="checkAnswer(this, 'q5')">
+              <input type="radio" name="q5" class="radio radio-sm"> <span>It asks the user to provide the verdict manually</span>
+            </label>
+          </div>
+          <div class="explanation hidden mt-3 text-sm text-base-content/70"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="text-center py-8 border-t border-base-content/5">
+      <p class="text-xs text-base-content/40">
+        Generated for <strong>Bug Repro Agent</strong> · Browser-Use Hackathon, July 4, 2026
+        <br>
+        <a href="https://github.com/Mr-Ashish/bug-repro-agent" class="link link-primary text-xs">github.com/Mr-Ashish/bug-repro-agent</a>
+      </p>
+    </footer>
+
+  </main>
+</div>
+
+<script>
+  // Quiz logic
+  const explanations = {
+    q1: "The browser-use agent is the ONLY layer that reasons about the bug. drive.py is pure infrastructure — it doesn't know what the bug is. It plumbs the issue text into a prompt and saves whatever comes back.",
+    q2: "browser-use compacts message history during long runs to stay within context windows. The task prompt gets summarized, but the system prompt (extend_system_message) stays intact. Critical instructions like the action format and verdict format must survive this compaction.",
+    q3: "The browser connection can hang if Chrome is unresponsive or crashed. But the agent's history (screenshots, actions, results) is already in memory from the AgentHistoryList. Saving artifacts first ensures they survive even if browser.close() times out.",
+    q4: "GitHub Markdown comments can't embed local files or base64 images (they get stripped). The script commits GIF, video, and evidence screenshots to the repro-agent's own repo, pushes, and references them via raw.githubusercontent.com URLs. It's crude but works reliably.",
+    q5: "parse_verdict() scans backward through the output. If no VERDICT line is found, it returns ('INCONCLUSIVE', 'Agent did not emit a structured verdict line'). This maps to exit code 2. The system degrades gracefully — artifacts are still saved."
+  };
+
+  function checkAnswer(label, qId) {
+    const card = document.getElementById(qId);
+    if (card.dataset.answered) return;
+    card.dataset.answered = "true";
+
+    const isCorrect = label.dataset.correct === "true";
+    const options = card.querySelectorAll('.quiz-option');
+
+    options.forEach(opt => {
+      opt.style.pointerEvents = 'none';
+      if (opt.dataset.correct === "true") {
+        opt.classList.add('correct');
+      } else if (opt === label && !isCorrect) {
+        opt.classList.add('incorrect');
+      }
+    });
+
+    const explDiv = card.querySelector('.explanation');
+    explDiv.classList.remove('hidden');
+    explDiv.innerHTML = `<strong>${isCorrect ? '✅ Correct!' : '❌ Not quite.'}</strong> ${explanations[qId]}`;
+
+    // Lavish feedback
+    if (typeof window.lavish !== 'undefined' && window.lavish.queuePrompt) {
+      window.lavish.queuePrompt(`Quiz ${qId}: ${isCorrect ? 'correct' : 'incorrect'}`);
+    }
+  }
+
+  // TOC active state on scroll
+  const sections = document.querySelectorAll('section[id], div[id]');
+  const tocLinks = document.querySelectorAll('.toc-link');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(link => link.classList.remove('active'));
+        const active = document.querySelector(`.toc-link[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.2, rootMargin: '-80px 0px -60% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>
+
+</body>
+</html>
