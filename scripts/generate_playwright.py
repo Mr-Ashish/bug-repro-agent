@@ -67,6 +67,62 @@ def parse_action_str(action_str: str) -> dict | None:
     return {"type": name, "params": params}
 
 
+def _result_text_for(results: list[dict], action_idx: int = 0) -> str:
+    """Get extracted_content from the result matching this action index."""
+    if action_idx < len(results):
+        return results[action_idx].get("extracted_content", "") or ""
+    return ""
+
+
+def _selector_from_result(result_text: str) -> str | None:
+    """Parse a browser-use result string into a Playwright selector.
+
+    Result strings look like:
+        'Clicked button "Continue"'
+        'Clicked a "Work items"'
+        'Clicked span "New work item"'
+        'Clicked button "Go to workspace"'
+        'Clicked button "Plane Dev" id=headlessui-disclosur aria-label=Open project menu'
+    """
+    if not result_text:
+        return None
+
+    # Pattern: 'Clicked <tag> "<text>"' with optional attributes
+    m = re.match(
+        r'Clicked\s+(\w+)\s+"([^"]+)"(?:\s+id=(\S+))?(?:\s+aria-label=(.+))?',
+        result_text,
+    )
+    if m:
+        tag = m.group(1)   # button, a, span, div, etc.
+        text = m.group(2)
+        elem_id = m.group(3)
+        aria = m.group(4)
+
+        # Prefer id if available (skip headlessui dynamic ids)
+        if elem_id and not elem_id.startswith("headlessui-"):
+            return f'#{elem_id}'
+
+        # Clean up the text: take first line only, strip trailing dots
+        clean = text.split("\n")[0].strip().rstrip(".").rstrip(".")
+        # Remove emoji prefixes (broad Unicode emoji ranges)
+        clean = re.sub(
+            r'^[\U0001f000-\U0001fFFF\u2600-\u27BF\u2700-\u27BF\uFE00-\uFE0F\u200d]+\s*',
+            '', clean,
+        ).strip()
+        if not clean:
+            return None
+
+        # Use role + name for buttons/links
+        if tag == "button":
+            return f'button:has-text("{clean}")'
+        if tag == "a":
+            return f'a:has-text("{clean}")'
+        # Fallback: text selector
+        return f'text="{clean}"'
+
+    return None
+
+
 def extract_steps(action_log: list[dict]) -> list[dict]:
     """Extract meaningful steps from action log, skipping noise."""
     steps = []
@@ -76,7 +132,7 @@ def extract_steps(action_log: list[dict]) -> list[dict]:
         url = entry.get("url", "")
         results = entry.get("results", [])
 
-        for action_raw in entry.get("actions", []):
+        for action_idx, action_raw in enumerate(entry.get("actions", [])):
             # Actions may be dicts (from model_dump) or strings (legacy format)
             if isinstance(action_raw, dict):
                 # Dict format: {"click": {"index": 123}} or {"input": {"index": 1, "text": "..."}}
@@ -98,13 +154,17 @@ def extract_steps(action_log: list[dict]) -> list[dict]:
             if t in ("writefile", "write_file", "done"):
                 continue
 
+            # Attach result text for selector extraction
+            result_text = _result_text_for(results, action_idx)
+
             steps.append({
                 "step": step_num,
                 "type": t,
                 "params": p,
-                "thought": thought[:150],
+                "thought": thought[:500],
                 "url": url,
                 "had_error": any(r.get("error") for r in results),
+                "result_text": result_text,
             })
 
     return steps
@@ -156,12 +216,41 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
         p = urlparse(urls[0])
         base_url = f"{p.scheme}://{p.netloc}"
 
+    # Detect where login/onboarding ends and real test steps begin.
+    # Skip steps that are part of login flow (handled by login() fixture).
+    # Login ends when the agent reaches the workspace URL (e.g. /plane-dev/...)
+    post_login_idx = 0
+    workspace_slug = "plane-dev"
+    for i, s in enumerate(steps):
+        url = s.get("url", "")
+        result = s.get("result_text", "")
+        # Once we're past onboarding and on a workspace page doing real actions
+        if (f"/{workspace_slug}/projects/" in url or
+            f"/{workspace_slug}/issues" in url or
+            "Work items" in result or
+            "work item" in result.lower()):
+            post_login_idx = i
+            break
+        # Also detect navigation past the workspace home
+        if (f"/{workspace_slug}/" in url and
+            "/onboarding/" not in url and
+            s["type"] in ("click",) and
+            "project" in result.lower()):
+            post_login_idx = i
+            break
+
     # Build step comments showing what the agent did
     step_lines = []
-    for s in steps:
+    for s_idx, s in enumerate(steps):
         t = s["type"]
         p = s["params"]
-        comment = f"    # Step {s['step']}: {s['thought']}" if s["thought"] else ""
+        comment = f"    # Step {s['step']}: {s['thought'][:150]}" if s["thought"] else ""
+
+        # Skip login/onboarding steps — handled by login() fixture
+        if s_idx < post_login_idx:
+            step_lines.append(f"    # (login step {s['step']} — handled by login())")
+            step_lines.append("")
+            continue
 
         if t in ("navigate", "go_to_url", "goto"):
             url = p.get("url", s.get("url", ""))
@@ -172,22 +261,45 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
 
         elif t in ("click", "clickelement"):
             idx = p.get("index", p.get("element_id", "?"))
+            result_text = s.get("result_text", "")
+            selector = _selector_from_result(result_text)
             if comment:
                 step_lines.append(comment)
-            step_lines.append(
-                f"    # Agent clicked element index={idx} — replace with real selector"
-            )
-            step_lines.append(f"    # page.locator('...').click()")
+            if selector:
+                step_lines.append(f'    page.locator(\'{selector}\').click()')
+            else:
+                step_lines.append(
+                    f"    # Agent clicked element index={idx} — replace with real selector"
+                )
+                step_lines.append(f"    # page.locator('...').click()")
 
         elif t in ("input", "inputtext", "type", "input_text"):
             text = p.get("text", p.get("value", ""))
             idx = p.get("index", "?")
+            result_text = s.get("result_text", "")
             if comment:
                 step_lines.append(comment)
-            step_lines.append(
-                f"    # Agent typed into element index={idx}"
-            )
-            step_lines.append(f'    # page.locator("...").fill("{text}")')
+            # Try to find the input by common attributes from the thought
+            thought_text = s.get("thought", "")
+            input_selector = None
+            # Look for name=, id=, placeholder= in the thought
+            for attr in ("name", "id", "placeholder"):
+                m = re.search(rf'{attr}[=\'"](\w[\w\-]*)', thought_text)
+                if m:
+                    val = m.group(1)
+                    # Skip generic attribute values (but allow 'name' as input name)
+                    if val not in ("text", "true", "false", "input", "submit"):
+                        input_selector = f'input[{attr}="{val}"]'
+                        break
+            # Escape text for embedding in generated code
+            safe_text = text.replace('\\', '\\\\').replace('"', '\\"')
+            if input_selector:
+                step_lines.append(f'    page.locator(\'{input_selector}\').fill("{safe_text}")')
+            else:
+                step_lines.append(
+                    f"    # Agent typed into element index={idx}"
+                )
+                step_lines.append(f'    # page.locator("...").fill("{safe_text}")')
 
         elif t == "scroll":
             direction = p.get("direction", "down")
@@ -265,18 +377,30 @@ WORKSPACE = "plane-dev"
 # ── Fixtures ──────────────────────────────────────────────────
 
 def login(page: Page) -> None:
-    """Log into Plane."""
+    """Log into Plane (two-step: email → continue → password → submit)."""
     page.goto(f"{{BASE_URL}}")
     page.wait_for_load_state("networkidle")
 
-    # Fill login form
+    # Step 1: Enter email and click Continue
     page.locator('input[name="email"]').fill(EMAIL)
-    page.locator('input[name="password"]').fill(PASSWORD)
-    page.locator('button[type="submit"]').click()
+    page.locator('button:has-text("Continue")').click()
+    page.wait_for_timeout(1000)
 
-    # Wait for workspace dashboard
+    # Step 2: Enter password and click Go to workspace
+    page.locator('input[type="password"]').fill(PASSWORD)
+    page.locator('button:has-text("Go to workspace")').click()
+
+    # Wait for workspace dashboard or onboarding
     page.wait_for_url(f"**/{{WORKSPACE}}/**", timeout=15000)
     page.wait_for_load_state("networkidle")
+
+    # Handle onboarding if it appears
+    if "/onboarding/" in page.url:
+        continue_btn = page.locator('button:has-text("Continue")')
+        if continue_btn.is_visible(timeout=3000):
+            continue_btn.click()
+            page.wait_for_url(f"**/{{WORKSPACE}}/**", timeout=15000)
+            page.wait_for_load_state("networkidle")
 
 
 # ── Test ──────────────────────────────────────────────────────

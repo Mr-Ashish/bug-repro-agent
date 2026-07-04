@@ -11,8 +11,10 @@ Run these steps in order. Each step must succeed before moving to the next.
 
 ### 1. Start Plane services
 
+**Use `docker-compose.yml` (NOT `docker-compose-local.yml`).** The local compose file only has backend services — no web frontend, no Caddy proxy, and the API image is missing `debug_toolbar`. The full compose file has all 13 services including Caddy on port 80 which unifies frontend and API.
+
 ```bash
-cd plane && docker compose -f docker-compose-local.yml up -d
+cd plane && docker compose -f docker-compose.yml up -d
 ```
 
 Wait for the API to be ready (migrator needs ~30-60s on first run):
