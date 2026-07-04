@@ -196,16 +196,16 @@ The top areas by issue volume (issues touch multiple components):
 - **Library:** [browser-use](https://github.com/browser-use/browser-use) (Python)
 - **Model:** Claude Sonnet 4 via OpenRouter
 - **Browser:** Chrome via CDP (WebSocket, localhost:9222)
-- **Target:** Plane running on `localhost:3000` via docker-compose
+- **Target:** Plane running on `localhost:80` via docker-compose
 - **Credentials:** `admin@admin.com` / `qweQWE123!@#`
 - **Workspace:** `plane-dev`
-- **Seed data:** Project SEED — 30 issues, 5 states, 3 cycles, 4 modules, 5 pages, sub-issues
+- **Seed data:** Project SEED — 5 work items (incl. edge cases), 5 states
 - **Max steps:** 50
-- **Viewport:** 1280 × 720
+- **Viewport:** 1920 × 1080
 
 ### CAN do
 
-- Navigate to any page on localhost:3000
+- Navigate to any page on localhost:80
 - Log in with admin credentials
 - Click buttons, links, dropdowns, chevrons, menu items
 - Type text into input fields (including long strings, special characters)
@@ -222,7 +222,7 @@ The top areas by issue volume (issues touch multiple components):
 | Limitation | Why it matters |
 |-----------|----------------|
 | Only Chrome (no Safari, Firefox) | Safari-only bugs won't reproduce |
-| Only desktop viewport 1280×720 | Mobile-only bugs won't reproduce |
+| Only desktop viewport 1920×1080 | Mobile-only bugs won't reproduce |
 | No CLI tools | `plane push`, `prime-cli` bugs are unreachable |
 | No email send/receive | Can't verify email notifications |
 | No external services | GitHub OAuth, Slack, JIRA import all unreachable |
@@ -307,7 +307,7 @@ Confidence ratings:
 | **Estimated time** | ~30s |
 
 **Reproduction steps for the agent:**
-1. Log in to Plane at localhost:3000
+1. Log in to Plane at localhost:80
 2. Navigate to the SEED project
 3. Go to Work Items
 4. Click the inline "New work item" input (not the modal)
@@ -469,7 +469,7 @@ Confidence ratings:
 
 **Why #6:** This is a clean before/after demonstration. The agent shows the disabled state, types a single character, then shows the enabled state. Very clear visual contrast. The audience immediately understands the bug — "why should I need to type text before I can upload an image?"
 
-**Risk:** Very low. Opening an issue and looking at the comment area is straightforward. The SEED project has 30 issues to choose from.
+**Risk:** Very low. Opening an issue and looking at the comment area is straightforward. The SEED project has work items to choose from.
 
 ---
 
@@ -677,7 +677,7 @@ Confidence ratings:
 
 **Reproduction:** Work Items → Table/Spreadsheet layout → scroll right → column headers desync from data.
 
-**Risk:** Needs enough property columns visible to trigger horizontal scrolling at 1280px viewport width. Might need to add extra property columns first.
+**Risk:** Needs enough property columns visible to trigger horizontal scrolling at 1920px viewport width. Might need to add extra property columns first.
 
 ---
 
@@ -698,7 +698,7 @@ These issues scored high in the algorithmic pass but **cannot be reproduced by t
 | [#7570](https://github.com/makeplane/plane/issues/7570) | 76 | God Mode 403 after update | **Coolify-specific** — not a Plane bug, deployment platform issue |
 | [#8567](https://github.com/makeplane/plane/issues/8567) | 74 | CJK fonts in PDF export | Agent **cannot inspect downloaded PDFs** — content goes to disk |
 | [#6359](https://github.com/makeplane/plane/issues/6359) | 74 | US timezone offsets wrong | **DST-dependent** — on July 4, US timezones ARE in EDT, offsets are correct |
-| [#9084](https://github.com/makeplane/plane/issues/9084) | 61 | Mobile text overlap | **Mobile viewport only** — agent viewport is 1280×720 desktop |
+| [#9084](https://github.com/makeplane/plane/issues/9084) | 61 | Mobile text overlap | **Mobile viewport only** — agent viewport is 1920×1080 desktop |
 | [#5485](https://github.com/makeplane/plane/issues/5485) | 64 | Japanese IME submits comment | Agent **cannot use input methods** — browser-use types directly |
 | [#8901](https://github.com/makeplane/plane/issues/8901) | 54 | macOS ⌘F not working | **Desktop app only** — agent tests the web app, not Electron/Tauri |
 | [#9041](https://github.com/makeplane/plane/issues/9041) | 51 | admin* slug 403s API | Requires **creating new workspace** — risky, changes global state |
@@ -741,7 +741,7 @@ These issues scored high in the algorithmic pass but **cannot be reproduced by t
 
 ## Pre-demo checklist
 
-- [ ] Plane running on localhost:3000 (`docker-compose up`)
+- [ ] Plane running on localhost:80 (`docker-compose up`)
 - [ ] Chrome open with `--remote-debugging-port=9222`
 - [ ] `.env` configured (OPENROUTER_API_KEY, CDP_URL, PLANE credentials)
 - [ ] Seed data loaded (SEED project with issues, states, sub-issues)

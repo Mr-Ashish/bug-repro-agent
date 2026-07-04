@@ -7,8 +7,7 @@ Built for the **Browser-Use Hackathon** (July 4, 2026, Bengaluru).
 ## What it does
 
 ```bash
-python scripts/drive.py --issue 9329
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/5432
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
 ```
 
 1. **Fetches** the GitHub issue via `gh` CLI
@@ -16,26 +15,31 @@ python scripts/drive.py --url https://github.com/makeplane/plane/issues/5432
 3. **Drives** the browser via [browser-use](https://github.com/browser-use/browser-use) to reproduce the bug
 4. **Parses** the agent's structured verdict: `VERDICT: REPRODUCED | <summary>`
 5. **Saves** evidence: screenshots, action log, GIF, video, full trace
-6. **Reports** (optional): posts a rich reproduction report back to the GitHub issue
+6. **Generates** a Playwright regression test from the action log
+7. **Reports** a rich reproduction report back to the GitHub issue (with `--post`)
 
 Works on **any** Plane issue — not just pre-selected ones.
 
 ## Architecture
 
 ```
-Fetch:  gh issue view → issue title + body
-Prompt: generic template + issue body + Plane credentials
-Agent:  browser-use (Python) → Claude Sonnet 4 via OpenRouter → Chrome CDP
-Target: Plane (local docker-compose)
-Output: reproductions/<issue-number>/ (verdict, screenshots, traces)
+Human → Grok (meta-agent, reads SKILL.md) → drive.py (infra) → browser-use Agent (bug reasoning)
 ```
 
-**One script does everything:** `scripts/drive.py` fetches, prompts, drives, parses, saves.
+```
+Fetch:   gh issue view → issue title + body
+Prompt:  generic template + issue body + Plane credentials + source-code context
+Agent:   browser-use (Python) → Claude Sonnet 4 via OpenRouter → Chrome CDP
+Target:  Plane (local docker-compose on localhost:80 via Caddy)
+Output:  reproductions/<issue-number>/ (verdict, screenshots, traces, Playwright test)
+```
+
+**One script does everything:** `scripts/drive.py` fetches, prompts, drives, parses, saves, generates test, posts.
 
 ## Output
 
 ```
-reproductions/9329/
+reproductions/<N>/
 ├── issue.json               # fetched issue (title, body, URL)
 ├── task-prompt.txt           # full prompt sent to agent
 ├── action-log.json          # every agent step (thought, actions, result)
@@ -43,15 +47,16 @@ reproductions/9329/
 ├── agent-run.gif            # animated GIF of browser session
 ├── conversation.json        # full LLM conversation
 ├── verdict.md               # parsed verdict + agent result + run stats
+├── test_<N>.py              # auto-generated Playwright regression test
+├── github-comment.md        # GitHub comment (with --post)
 ├── error.txt                # error details (on crash/timeout)
-├── github-comment.md        # GitHub comment (from post_comment.py)
 └── traces/
     └── full-trace.json      # complete browser-use agent history
 ```
 
 ## Prerequisites
 
-- [Plane](https://github.com/makeplane/plane) running locally on `:3000`
+- [Plane](https://github.com/makeplane/plane) running locally on `:80` (via Caddy proxy)
 - Chrome with `--remote-debugging-port=9222`
 - Python 3.11+
 - OpenRouter API key
@@ -60,7 +65,7 @@ reproductions/9329/
 ## Setup
 
 ```bash
-pip install browser-use python-dotenv
+pip install -r requirements.txt
 cp .env.example .env                 # add OPENROUTER_API_KEY
 ```
 
@@ -86,30 +91,21 @@ python scripts/seed.py populate
 ## Usage
 
 ```bash
+# Full E2E — reproduce + Playwright test + post verdict to GitHub
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post
+
+# With source-code context from the meta-agent (best results)
+python scripts/drive.py --url https://github.com/makeplane/plane/issues/9329 --post \
+  --context "Feature URL: /plane-dev/projects/<id>/issues/"
+
 # By issue number (uses GITHUB_REPO from .env, default: makeplane/plane)
-python scripts/drive.py --issue 9329
-
-# By full URL (auto-detects repo)
-python scripts/drive.py --url https://github.com/makeplane/plane/issues/9050
-
-# Specify a different repo
-python scripts/drive.py --issue 42 --repo someorg/somerepo
+python scripts/drive.py --issue 9329 --post
 
 # Dry run — generate prompt without running agent (saves API cost)
 python scripts/drive.py --issue 9329 --dry-run
 
 # Custom timeout (default: 300s)
 python scripts/drive.py --issue 9329 --timeout 600
-```
-
-### Post reproduction report to GitHub
-
-```bash
-# After a successful drive run, post a comment to the issue
-python scripts/post_comment.py --issue 9329
-
-# Dry run — generate comment file without posting
-python scripts/post_comment.py --issue 9329 --dry-run
 ```
 
 ### Exit codes
@@ -123,12 +119,12 @@ python scripts/post_comment.py --issue 9329 --dry-run
 
 ## Verdict protocol
 
-The agent is instructed to end with a structured verdict line:
+The agent ends with a structured verdict line:
 
 ```
-VERDICT: REPRODUCED | The 256-char title showed "Some error occurred" instead of a descriptive message
-VERDICT: NOT_REPRODUCED | The feature worked correctly — descriptive error was shown
-VERDICT: INCONCLUSIVE | Could not find the stickies section in the UI
+VERDICT: REPRODUCED | <what was observed>
+VERDICT: NOT_REPRODUCED | <the feature worked correctly>
+VERDICT: INCONCLUSIVE | <why it couldn't be determined>
 ```
 
 `drive.py` parses this with a regex — no per-issue keyword matching needed.
@@ -140,7 +136,7 @@ Allowed verdicts: `REPRODUCED` · `NOT_REPRODUCED` · `INCONCLUSIVE`
 
 **Prompt:** One generic template works for all issues. The issue body IS the reproduction plan — the LLM figures out the steps.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system design, UML sequence diagram, and layer ownership.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full system design.
 
 ## License
 

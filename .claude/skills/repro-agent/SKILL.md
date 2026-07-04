@@ -45,7 +45,7 @@ Pre-flight checklist — run in this exact order:
    ```
    python scripts/seed.py populate
    ```
-   Creates a SEED project with work items, states, cycles, modules, and pages.
+   Creates a SEED project with 5 work items (incl. edge cases) and 5 states.
    Idempotent — safe to run multiple times. Re-run `check` after to verify.
 
 Only proceed to drive.py after `seed.py check` exits 0.

@@ -24,7 +24,7 @@ load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────
 
-PLANE_URL = os.getenv("PLANE_URL", "http://localhost:3000")
+PLANE_URL = os.getenv("PLANE_URL", "http://localhost:80")
 PLANE_EMAIL = os.getenv("PLANE_EMAIL", "admin@admin.com")
 PLANE_PASSWORD = os.getenv("PLANE_PASSWORD", "qweQWE123!@#")
 PLANE_WORKSPACE = os.getenv("PLANE_WORKSPACE", "plane-dev")
