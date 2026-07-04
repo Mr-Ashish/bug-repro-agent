@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How It Works — Bug Repro Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --dark: #141413;
+    --light: #faf9f5;
+    --mid: #b0aea5;
+    --orange: #d97757;
+    --blue: #6a9bcc;
+    --green: #788c5d;
+    --surface: #1c1c1b;
+    --surface2: #242423;
+    --border: #2e2e2c;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Lora', Georgia, serif;
+    background: var(--dark);
+    color: var(--light);
+    line-height: 1.7;
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 6rem;
+  }
+  h1, h2, h3 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+  h2 {
+    font-size: 1.3rem;
+    margin: 3rem 0 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; color: var(--light); }
+  p { color: var(--mid); margin-bottom: 0.75rem; }
+  a { color: var(--blue); text-decoration: none; }
+  strong { color: var(--light); }
+  em { color: var(--light); font-style: normal; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface2);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.82em;
+    color: var(--orange);
+  }
+  .sub { font-family: 'Poppins', sans-serif; font-size: 1.05rem; color: var(--mid); margin-bottom: 2rem; }
+
+  /* Role labels */
+  .role {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 3px;
+    display: inline-block;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .role-user { background: rgba(106,155,204,0.15); color: var(--blue); }
+  .role-agent { background: rgba(217,119,87,0.12); color: var(--orange); }
+  .role-tool { background: rgba(120,140,93,0.12); color: var(--green); }
+  .role-result { background: rgba(176,174,165,0.1); color: var(--mid); }
+
+  /* Conversation blocks */
+  .conv {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 1rem 0;
+    overflow: hidden;
+  }
+  .conv-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--light);
+  }
+  .conv-body {
+    padding: 14px 16px;
+  }
+  .conv-body p { margin-bottom: 0.5rem; font-size: 0.92rem; }
+  .conv-body p:last-child { margin-bottom: 0; }
+
+  /* Code blocks */
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--dark);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 12px 14px;
+    font-size: 12.5px;
+    line-height: 1.55;
+    overflow-x: auto;
+    color: var(--mid);
+    margin: 0.6rem 0;
+  }
+  pre .cm { color: #5a5a55; }
+  pre .ok { color: var(--green); }
+  pre .err { color: #e5534b; }
+  pre .hi { color: var(--orange); }
+  pre .val { color: var(--blue); }
+
+  /* Flow arrow */
+  .arrow {
+    text-align: center;
+    color: var(--border);
+    font-size: 20px;
+    line-height: 1;
+    margin: -2px 0;
+    user-select: none;
+  }
+
+  /* Callouts */
+  .callout {
+    border-left: 3px solid;
+    padding: 10px 16px;
+    margin: 0.75rem 0;
+    border-radius: 0 5px 5px 0;
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+  .callout strong { font-family: 'Poppins', sans-serif; font-size: 0.82rem; }
+  .c-orange { border-color: var(--orange); background: rgba(217,119,87,0.06); }
+  .c-green { border-color: var(--green); background: rgba(120,140,93,0.06); }
+  .c-blue { border-color: var(--blue); background: rgba(106,155,204,0.06); }
+  .c-gray { border-color: var(--mid); background: rgba(176,174,165,0.04); }
+
+  /* Tables */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 0.6rem 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  th {
+    font-family: 'Poppins', sans-serif;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: left;
+    padding: 7px 12px;
+    background: var(--surface);
+    color: var(--mid);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--mid);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* Verdict badges */
+  .v {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .v-ok { background: rgba(120,140,93,0.15); color: var(--green); }
+
+  /* Phase labels */
+  .phase {
+    font-family: 'Poppins', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--orange);
+    margin-bottom: 4px;
+  }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .progress {
+    position: fixed; top: 0; left: 0;
+    width: 100%; height: 3px;
+    background: var(--surface); z-index: 100;
+  }
+  .progress-bar { height: 100%; background: var(--orange); width: 0%; transition: width 0.2s; }
+
+  /* Artifact grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px;
+    margin: 0.6rem 0;
+  }
+  .grid-card {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 10px;
+  }
+  .grid-card h4 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--light);
+    margin-bottom: 2px;
+  }
+  .grid-card p { font-size: 11px; color: var(--mid); margin: 0; line-height: 1.3; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0s !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress"><div class="progress-bar" id="prog"></div></div>
+
+<h1>How it works</h1>
+<p class="sub">
+  A real reproduction of
+  <a href="https://github.com/makeplane/plane/issues/9329">Plane #9329</a>,
+  traced step by step from the initial command to the posted GitHub comment.
+</p>
+
+<p>
+  This page follows the actual agent session. Every command, output, and decision shown
+  here happened during a live run on July 4, 2026.
+</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 1: Trigger</h2>
+
+<p>One command starts everything. The user pastes a GitHub issue URL.</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-user">User</span></div>
+  <div class="conv-body">
+    <pre>/repro-agent https://github.com/makeplane/plane/issues/9329</pre>
+  </div>
+</div>
+
+<p>
+  The meta-agent (Grok) reads the <code>SKILL.md</code> file, which defines the full
+  pre-flight checklist, the context-building workflow, and how to call <code>drive.py</code>.
+  It starts executing the checklist.
+</p>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 2: Fetch the issue</h2>
+
+<p>First, grab the bug report from GitHub and check what the issue says.</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Fetch GitHub issue</div>
+  <div class="conv-body">
+    <pre>gh issue view 9329 --repo makeplane/plane \
+  --json title,body,labels,state</pre>
+  </div>
+</div>
+
+<div class="callout c-blue">
+  <strong>Issue #9329</strong><br>
+  <em>[bug]: Inline work item creation shows generic error when title exceeds 255 characters</em><br>
+  Labels: 🐛bug, plane. Filed 2026-06-28. Steps: type a 256+ char title in the inline
+  creation row, press Enter, observe "Some error occurred" instead of a validation message.
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 3: Verify the stack</h2>
+
+<p>The agent checks whether every dependency is alive before touching a browser.</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check Docker services</div>
+  <div class="conv-body">
+    <pre>cd plane && docker compose -f docker-compose.yml ps \
+  --format "table {{.Name}}\t{{.Status}}" | head -20</pre>
+    <p>All 13 containers running (web, api, worker, beat, postgres, redis, minio, caddy…)</p>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check API + Chrome (parallel)</div>
+  <div class="conv-body">
+    <pre><span class="cm"># API health</span>
+curl -s http://localhost:80/api/instances/ | python3 -c \
+  "import sys,json; d=json.load(sys.stdin); \
+   print('setup_done:', d.get('is_setup_done', False))"
+<span class="hi">→ setup_done: False</span>
+
+<span class="cm"># Chrome CDP</span>
+curl -s http://localhost:9222/json/version | python3 -c \
+  "import sys,json; print(json.load(sys.stdin)['webSocketDebuggerUrl'])"
+<span class="ok">→ ws://127.0.0.1:9222/devtools/browser/abc123</span></pre>
+  </div>
+</div>
+
+<div class="callout c-orange">
+  <strong>Instance needs first-time setup</strong><br>
+  The API returned <code>is_setup_done: false</code>. The agent runs the full registration
+  flow: register admin, sign in, create workspace. All via curl against Plane's Django API.
+</div>
+
+<div class="arrow">↓</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Register admin + create workspace</div>
+  <div class="conv-body">
+    <pre><span class="cm"># 1. Get CSRF token</span>
+curl -s -c /tmp/plane-cookies.txt \
+  http://localhost:80/auth/get-csrf-token/
+
+<span class="cm"># 2. Register instance admin</span>
+curl -s -d "email=admin@admin.com" \
+  -d "first_name=admin" \
+  --data-urlencode "password=qweQWE123!@#" \
+  http://localhost:80/api/instances/admins/sign-up/
+<span class="ok">→ Admin signup: HTTP 200</span>
+
+<span class="cm"># 3. Sign in</span>
+curl -s -d "email=admin@admin.com" \
+  --data-urlencode "password=qweQWE123!@#" \
+  http://localhost:80/auth/sign-in/
+<span class="ok">→ Sign-in: HTTP 200</span>
+
+<span class="cm"># 4. Create workspace</span>
+curl -s -H "Content-Type: application/json" \
+  -d '{"name":"Plane Dev","slug":"plane-dev"}' \
+  http://localhost:80/api/workspaces/
+<span class="ok">→ Workspace: plane-dev</span></pre>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check seed data</div>
+  <div class="conv-body">
+    <pre>python3 scripts/seed.py check
+<span class="ok">→ exit 0 (SEED project exists, states + issues present)</span></pre>
+  </div>
+</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-agent">Agent</span></div>
+  <div class="conv-body">
+    <p>Stack is ready. Let me read Plane source for navigation context relevant
+    to this bug: inline work item creation with title validation.</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 4: Build context</h2>
+
+<p>
+  Before running <code>drive.py</code>, the meta-agent reads Plane's source code at
+  <code>plane/apps/web/</code> to find the inline creation component, the validation
+  path, and the error handling. These findings go into a context file.
+</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Write context file</div>
+  <div class="conv-body">
+    <pre><span class="cm"># reproductions/9329/context.txt</span>
+
+BUG: Inline work item creation shows generic error
+when title exceeds 255 characters.
+
+TECHNICAL DETAILS:
+- quick-add/root.tsx uses setPromiseToast with
+  err?.message as the error extractor
+- API returns {"name":["Ensure this field has no
+  more than 255 characters."]} — no .message property
+- Falls back to "Some error occurred. Please try again."
+- Modal path uses error?.error — different extractor
+
+NAVIGATION:
+- Login → SEED project → Work Items
+- Click inline creation row (not the modal button)
+
+REPRODUCE:
+1. Go to Work Items in SEED project
+2. Click the inline "New work item" row
+3. Type 256+ character string
+4. Press Enter
+5. Observe error toast</pre>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 5: Run drive.py</h2>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check drive.py config</div>
+  <div class="conv-body">
+    <pre>grep -n 'max_steps\|viewport\|MODEL' scripts/drive.py
+<span class="val">→ max_steps=50, viewport 1920x1080, Claude Sonnet 4</span></pre>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Launch agent</div>
+  <div class="conv-body">
+    <pre>python scripts/drive.py \
+  --url https://github.com/makeplane/plane/issues/9329 \
+  --context reproductions/9329/context.txt</pre>
+    <p>The agent runs in the background. <code>drive.py</code> fetches the issue,
+    builds the prompt from TASK_TEMPLATE + issue body + context, creates the
+    browser-use Agent, and calls <code>agent.run(max_steps=50)</code>.</p>
+  </div>
+</div>
+
+<div class="callout c-green">
+  <strong>What drive.py does not do</strong><br>
+  <code>drive.py</code> never sees the bug. It injects the issue text into a generic template,
+  hands it to the browser-use agent, and saves whatever comes back.
+  The agent is the only layer that reads the bug report and decides what to click.
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 6: Agent drives Chrome</h2>
+
+<p>
+  The browser-use agent (Claude Sonnet 4 via OpenRouter) controls Chrome over CDP.
+  Each step: screenshot the page, think about what to do, take one action, observe the result.
+</p>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Step</th><th>Agent action</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Navigate to Plane login page</td><td>Login form visible</td></tr>
+      <tr><td>2</td><td>Enter email + password, click Continue</td><td>Dashboard loads</td></tr>
+      <tr><td>3</td><td>Click SEED project in sidebar</td><td>Work items list appears</td></tr>
+      <tr><td>4</td><td>Click inline "New work item" row</td><td>Text input field opens</td></tr>
+      <tr><td>5</td><td>Type 256 × "A", press Enter</td><td>Error toast: "Some error occurred"</td></tr>
+      <tr><td>6</td><td>Read error, compare to expected</td><td>Generic message, no mention of 255 limit</td></tr>
+      <tr><td>7-9</td><td>Screenshot evidence, emit verdict</td><td><span class="v v-ok">REPRODUCED</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<pre><span class="cm"># Agent's final output:</span>
+VERDICT: REPRODUCED | When entering a 256+ character string
+into the inline work item creation field and pressing Enter,
+the system shows "Some error occurred. Please try again."
+instead of the expected descriptive validation message like
+"Title should be less than 255 characters".</pre>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-agent">Agent</span></div>
+  <div class="conv-body">
+    <p>Agent completed with <strong>VERDICT: REPRODUCED</strong> in 9 steps.
+    The toast auto-dismissed before the final screenshot. Let me review the
+    evidence files to find the smoking gun.</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 7: Verify artifacts</h2>
+
+<p>
+  <code>drive.py</code> saved everything to <code>reproductions/9329/</code> before
+  closing the browser. The meta-agent checks that all required files exist.
+</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check artifacts</div>
+  <div class="conv-body">
+    <pre>ls -la reproductions/9329/
+<span class="ok">✓</span> verdict.md         <span class="cm">— REPRODUCED, 9 steps, 52.1s</span>
+<span class="ok">✓</span> action-log.json    <span class="cm">— step-by-step trace</span>
+<span class="ok">✓</span> github-comment.md  <span class="cm">— ready to post</span>
+<span class="ok">✓</span> report.html        <span class="cm">— 1.5 MB self-contained report</span>
+<span class="ok">✓</span> agent-run.gif      <span class="cm">— session recording</span>
+<span class="ok">✓</span> evidence-01.png through evidence-08.png</pre>
+  </div>
+</div>
+
+<h3>Finding the smoking-gun screenshot</h3>
+
+<p>
+  The meta-agent opens each evidence screenshot and looks for the one that
+  clearly shows the bug. This uses vision, not filename heuristics.
+</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-agent">Agent</span> Reviews screenshots</div>
+  <div class="conv-body">
+    <p><strong>evidence-05.png</strong>: Work items list view, before bug trigger. Not useful.</p>
+    <p><strong>evidence-06.png</strong>: Inline input field is open. Setup, not proof.</p>
+    <p><strong>evidence-07.png</strong>: 256× "AAAA..." string typed in the inline field. Best pre-submit evidence.</p>
+    <p><strong>evidence-08.png</strong>: Toast already dismissed. The error appeared and disappeared between screenshots.</p>
+  </div>
+</div>
+
+<div class="callout c-orange">
+  <strong>Toast auto-dismissed</strong><br>
+  The error toast appeared and vanished before the agent could capture it in a screenshot.
+  The meta-agent corroborates by checking the network HAR for the 400 API response.
+</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Check HAR for API proof</div>
+  <div class="conv-body">
+    <pre><span class="cm"># Parse network.har for POST to /issues/ with 400 status</span>
+python3 -c "
+import json
+with open('reproductions/9329/network.har') as f:
+    har = json.load(f)
+for entry in har['log']['entries']:
+    req = entry['request']
+    resp = entry['response']
+    if 'issues' in req['url'] and req['method'] == 'POST':
+        print(f'Status: {resp[\"status\"]}')
+        print(f'Body: {resp[\"content\"][\"text\"][:200]}')
+"</pre>
+    <pre><span class="err">Status: 400</span>
+Body: {"name":["Ensure this field has no more than 255 characters."]}</pre>
+  </div>
+</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-agent">Agent</span></div>
+  <div class="conv-body">
+    <p>Confirmed. The API returned a 400 with a clear validation message:
+    <code>{"name":["Ensure this field has no more than 255 characters."]}</code>.
+    The frontend swallowed this and showed "Some error occurred."
+    <strong>evidence-07.png</strong> (256+ char string in the input) is the best visual proof.</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Phase 8: Post to GitHub</h2>
+
+<p>
+  <code>post_comment.py</code> reads the artifact directory, builds a rich Markdown
+  comment, and posts it with <code>gh issue comment</code>. Images are committed to
+  the repo and referenced via <code>raw.githubusercontent.com</code> URLs.
+  <code>mask_password()</code> scrubs credentials from every output.
+</p>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Post comment</div>
+  <div class="conv-body">
+    <pre>python scripts/post_comment.py --issue 9329 \
+  --repo makeplane/plane \
+  --evidence reproductions/9329/evidence-07.png</pre>
+  </div>
+</div>
+
+<div class="arrow">↓</div>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-tool">Tool</span> Verify the comment posted</div>
+  <div class="conv-body">
+    <pre>gh issue view 9329 --repo makeplane/plane \
+  --json comments --jq '.comments[-1].body' | head -10
+<span class="ok">→ ## 🔍 Automated Bug Reproduction Report...</span></pre>
+  </div>
+</div>
+
+<p>The posted comment includes:</p>
+
+<div class="grid">
+  <div class="grid-card">
+    <h4>Verdict</h4>
+    <p>REPRODUCED + summary</p>
+  </div>
+  <div class="grid-card">
+    <h4>Session video</h4>
+    <p>agent-run.gif inline</p>
+  </div>
+  <div class="grid-card">
+    <h4>Step trace</h4>
+    <p>Action-by-action table</p>
+  </div>
+  <div class="grid-card">
+    <h4>Evidence</h4>
+    <p>Smoking-gun screenshot</p>
+  </div>
+  <div class="grid-card">
+    <h4>Root cause</h4>
+    <p>From context.txt analysis</p>
+  </div>
+  <div class="grid-card">
+    <h4>Playwright test</h4>
+    <p>Regression test skeleton</p>
+  </div>
+</div>
+
+<hr>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<h2>Result</h2>
+
+<div class="conv">
+  <div class="conv-header"><span class="role role-agent">Agent</span> Final report</div>
+  <div class="conv-body">
+    <p><strong>Verdict:</strong> <span class="v v-ok">REPRODUCED</span></p>
+    <p><strong>Comment posted:</strong> <a href="https://github.com/makeplane/plane/issues/9329#issuecomment-4881583078">github.com/makeplane/plane/issues/9329</a></p>
+    <p><strong>Root cause:</strong> The inline creation path in <code>quick-add/root.tsx</code>
+    uses <code>setPromiseToast</code> with <code>err?.message</code> as the error extractor.
+    The API error object (<code>{"name": [...]}</code>) has no <code>.message</code> property,
+    so it falls back to "Some error occurred." The modal creation path uses <code>error?.error</code>,
+    a different extractor. Neither properly handles Django's field-level validation errors.</p>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>Artifact</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><code>verdict.md</code></td><td><span class="v v-ok">REPRODUCED</span>, 9 steps, 52.1s</td></tr>
+      <tr><td><code>evidence-07.png</code></td><td>256+ char title in inline field</td></tr>
+      <tr><td><code>agent-run.gif</code></td><td>Full session recording</td></tr>
+      <tr><td><code>report.html</code></td><td>1.5 MB self-contained report</td></tr>
+      <tr><td><code>github-comment.md</code></td><td>Posted to GitHub</td></tr>
+      <tr><td>API proof (HAR)</td><td>HTTP 400: <code>{"name":["...no more than 255 characters."]}</code></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<hr>
+
+<h2>The full pipeline in two commands</h2>
+
+<pre><span class="cm"># Run the agent</span>
+python scripts/drive.py \
+  --url https://github.com/makeplane/plane/issues/9329
+
+<span class="cm"># Post evidence to GitHub</span>
+python scripts/post_comment.py --issue 9329 \
+  --evidence reproductions/9329/evidence-07.png</pre>
+
+<p>
+  Replace <code>9329</code> with any issue number. The prompt template stays the same.
+  The agent reads each bug report and figures out the browser steps.
+</p>
+
+<script>
+window.addEventListener('scroll', () => {
+  const h = document.documentElement.scrollHeight - window.innerHeight;
+  document.getElementById('prog').style.width = h > 0 ? (window.scrollY / h * 100) + '%' : '0%';
+});
+</script>
+</body>
+</html>

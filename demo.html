@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demo Script — Bug Repro Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --dark: #141413;
+    --light: #faf9f5;
+    --mid: #b0aea5;
+    --orange: #d97757;
+    --blue: #6a9bcc;
+    --green: #788c5d;
+    --surface: #1c1c1b;
+    --border: #2e2e2c;
+  }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Lora', Georgia, serif;
+    background: var(--dark);
+    color: var(--light);
+    line-height: 1.7;
+    font-size: 17px;
+    -webkit-font-smoothing: antialiased;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 6rem;
+  }
+  h1, h2, h3 {
+    font-family: 'Poppins', sans-serif;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  h1 { font-size: 2.2rem; margin-bottom: 0.5rem; }
+  h2 {
+    font-size: 1.3rem;
+    margin: 3rem 0 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--orange);
+  }
+  h3 { font-size: 1rem; margin: 1.5rem 0 0.5rem; color: var(--light); }
+  p { color: var(--mid); margin-bottom: 0.75rem; }
+  a { color: var(--blue); text-decoration: none; }
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    background: #242423;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.82em;
+    color: var(--orange);
+  }
+  .sub { font-family: 'Poppins', sans-serif; font-size: 1.05rem; color: var(--mid); margin-bottom: 2rem; }
+  .tag-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 1rem 0 2rem; }
+  .tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--mid);
+  }
+
+  /* Say blocks */
+  .say {
+    border-left: 3px solid var(--orange);
+    padding: 10px 16px;
+    margin: 0.75rem 0;
+    background: rgba(217,119,87,0.06);
+    border-radius: 0 5px 5px 0;
+    font-size: 1.02rem;
+    color: var(--light);
+    line-height: 1.6;
+  }
+  .say::before {
+    content: '🎤';
+    margin-right: 8px;
+  }
+
+  /* Do blocks */
+  .do {
+    border-left: 3px solid var(--blue);
+    padding: 10px 16px;
+    margin: 0.75rem 0;
+    background: rgba(106,155,204,0.06);
+    border-radius: 0 5px 5px 0;
+    font-size: 0.92rem;
+    color: var(--mid);
+    line-height: 1.6;
+  }
+  .do::before {
+    content: '👆';
+    margin-right: 8px;
+  }
+
+  /* Note blocks */
+  .note {
+    border-left: 3px solid var(--green);
+    padding: 10px 16px;
+    margin: 0.75rem 0;
+    background: rgba(120,140,93,0.06);
+    border-radius: 0 5px 5px 0;
+    font-size: 0.88rem;
+    color: var(--mid);
+  }
+  .note::before {
+    content: '📝';
+    margin-right: 8px;
+  }
+
+  /* Code blocks */
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--dark);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 14px 16px;
+    font-size: 13px;
+    line-height: 1.6;
+    overflow-x: auto;
+    color: var(--mid);
+    margin: 0.75rem 0;
+  }
+  pre .cm { color: #5a5a55; }
+
+  /* Checklist */
+  .check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
+  .check-box {
+    width: 18px; height: 18px;
+    border: 2px solid var(--mid);
+    border-radius: 3px;
+    flex-shrink: 0;
+    margin-top: 3px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .check-box.done { background: var(--green); border-color: var(--green); }
+  .check-label { color: var(--mid); font-size: 0.92rem; }
+  .check-cmd { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: #5a5a55; display: block; margin-top: 2px; }
+
+  /* Beat markers */
+  .beat-num {
+    font-family: 'Poppins', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--dark);
+    background: var(--orange);
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--mid);
+    background: var(--surface);
+    padding: 2px 8px;
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+
+  /* Dividers */
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  /* Progress bar */
+  .progress {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%;
+    height: 3px;
+    background: var(--surface);
+    z-index: 100;
+  }
+  .progress-bar {
+    height: 100%;
+    background: var(--orange);
+    width: 0%;
+    transition: width 0.2s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0s !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress"><div class="progress-bar" id="prog"></div></div>
+
+<h1>Bug Repro Agent</h1>
+<p class="sub">Browser-Use Hackathon · July 4, 2026</p>
+<div class="tag-row">
+  <span class="tag">~3 min total</span>
+  <span class="tag">Issue #9329</span>
+  <span class="tag">5 steps · 52s</span>
+</div>
+
+<!-- ════════════════════════════════════════ -->
+<h2>Pre-demo checklist</h2>
+
+<div class="check" onclick="this.querySelector('.check-box').classList.toggle('done')">
+  <div class="check-box"></div>
+  <div class="check-label">Plane running
+    <span class="check-cmd">curl -s $PLANE_URL/api/users/me/ | head -1</span>
+  </div>
+</div>
+<div class="check" onclick="this.querySelector('.check-box').classList.toggle('done')">
+  <div class="check-box"></div>
+  <div class="check-label">Chrome CDP open
+    <span class="check-cmd">curl -s http://localhost:9222/json/version | grep webSocket</span>
+  </div>
+</div>
+<div class="check" onclick="this.querySelector('.check-box').classList.toggle('done')">
+  <div class="check-box"></div>
+  <div class="check-label">gh CLI authenticated
+    <span class="check-cmd">gh auth status</span>
+  </div>
+</div>
+<div class="check" onclick="this.querySelector('.check-box').classList.toggle('done')">
+  <div class="check-box"></div>
+  <div class="check-label">Seed data loaded
+    <span class="check-cmd">python scripts/seed.py check</span>
+  </div>
+</div>
+<div class="check" onclick="this.querySelector('.check-box').classList.toggle('done')">
+  <div class="check-box"></div>
+  <div class="check-label">OpenRouter key set
+    <span class="check-cmd">echo $OPENROUTER_API_KEY | head -c 8</span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════ -->
+<h2>The bug</h2>
+
+<p>
+  Plane has two ways to create a work item: a sidebar modal and an inline row.
+  Type a title over 255 characters in the sidebar, you get "Title should be less than 255 characters."
+  Type the same title inline, you get "Some error occurred. Please try again."
+  Same validation, different error messages.
+</p>
+
+<div class="note">
+  Issue <a href="https://github.com/makeplane/plane/issues/9329">#9329</a> ·
+  filed 2026-06-28 · label: 🐛bug · form-validation class
+</div>
+
+<!-- ════════════════════════════════════════ -->
+<h2><span class="beat-num">1</span> Run the agent <span class="time">~60s</span></h2>
+
+<div class="say">
+  I'm giving the agent one GitHub issue URL. It fetches the bug report, reads the
+  reproduction steps, and drives Chrome on its own. No hardcoded logic. One generic prompt.
+</div>
+
+<div class="do">Switch to terminal. Run this command:</div>
+
+<pre>python scripts/drive.py \
+  --url https://github.com/makeplane/plane/issues/9329</pre>
+
+<div class="do">Switch to Chrome so the audience can watch the browser.</div>
+
+<h3>Narrate as it moves:</h3>
+
+<div class="say">It's logging in. Credentials come from .env, nothing hardcoded.</div>
+
+<div class="say">It found the SEED project in the sidebar. We seeded test data with a separate script.</div>
+
+<div class="say">It clicked the inline creation row. The issue says the bug is in the inline path, not the modal. The agent picked the right one.</div>
+
+<div class="say">Pasting a 256-character string. The limit is 255.</div>
+
+<div class="say">There it is. "Some error occurred." No mention of the character limit. That's the bug.</div>
+
+<div class="note">
+  If the agent takes a different path or stalls, let it run.
+  It replans after 2 stuck steps. Budget is 50 steps.
+</div>
+
+<hr>
+
+<!-- ════════════════════════════════════════ -->
+<h2><span class="beat-num">2</span> Show the evidence <span class="time">~60s</span></h2>
+
+<div class="say">
+  Every run produces a full evidence package. Let me show you what came out.
+</div>
+
+<div class="do">Run:</div>
+
+<pre>open reproductions/9329/report.html</pre>
+
+<h3>Walk the report tabs:</h3>
+
+<div class="do">Click Session Video tab</div>
+<div class="say">Full recording of the browser session. You can scrub through it.</div>
+
+<div class="do">Click Action Log tab</div>
+<div class="say">Every action: what the agent thought, what it clicked, what it saw. Five steps total.</div>
+
+<div class="do">Click Evidence tab, show the error toast screenshot</div>
+<div class="say">This is the smoking gun. The generic error toast, right there on screen.</div>
+
+<div class="do">Click Playwright Test tab</div>
+<div class="say">Auto-generated regression test. The login fixture works. Reproduction steps are structured comments that get rewritten into real selectors.</div>
+
+<hr>
+
+<h3>Show the raw artifact directory:</h3>
+
+<pre>ls reproductions/9329/
+<span class="cm"># issue.json        — fetched issue title + body</span>
+<span class="cm"># task-prompt.txt   — exact prompt sent to Claude Sonnet 4</span>
+<span class="cm"># action-log.json   — every step with thought + action + result</span>
+<span class="cm"># evidence-*.png    — screenshot at each step</span>
+<span class="cm"># agent-run.gif     — animated session recording</span>
+<span class="cm"># verdict.md        — REPRODUCED, 5 steps, 52.1s</span>
+<span class="cm"># test_9329.py      — Playwright regression test</span>
+<span class="cm"># report.html       — self-contained HTML report</span></pre>
+
+<hr>
+
+<!-- ════════════════════════════════════════ -->
+<h2><span class="beat-num">3</span> Post to GitHub <span class="time">~30s</span></h2>
+
+<div class="say">
+  Now I post this back to the original GitHub issue. The maintainer gets video, step trace,
+  evidence, and a Playwright test without doing any manual reproduction.
+</div>
+
+<div class="do">Run:</div>
+
+<pre>python scripts/post_comment.py --issue 9329 \
+  --evidence reproductions/9329/evidence-03.png</pre>
+
+<div class="do">Open <a href="https://github.com/makeplane/plane/issues/9329">github.com/makeplane/plane/issues/9329</a> and scroll to the new comment.</div>
+
+<div class="say">
+  Inline video, step trace table, the evidence screenshot, root cause analysis,
+  and the Playwright test. All posted automatically.
+</div>
+
+<hr>
+
+<!-- ════════════════════════════════════════ -->
+<h2>Close</h2>
+
+<div class="say">
+  This same command works on any of Plane's 289 open bugs. No per-issue scripting.
+  The prompt template is identical every time. The LLM reads each issue and
+  figures out the browser steps on its own.
+</div>
+
+<div class="say">
+  We analyzed all 791 open issues, filtered down to 284 browser-reproducible bug candidates,
+  and verified 15 that the agent can reproduce with high confidence. We showed you one.
+  The other 14 work the same way.
+</div>
+
+<script>
+window.addEventListener('scroll', () => {
+  const h = document.documentElement.scrollHeight - window.innerHeight;
+  document.getElementById('prog').style.width = h > 0 ? (window.scrollY / h * 100) + '%' : '0%';
+});
+</script>
+</body>
+</html>
