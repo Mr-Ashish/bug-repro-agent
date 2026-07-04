@@ -128,15 +128,101 @@ def read_root_cause(repro_dir: Path) -> str:
 def _pick_best_evidence(repro_dir: Path) -> Path | None:
     """Pick the best evidence screenshot — the one most likely showing the bug.
 
-    Strategy: the last screenshot is often from the 'done' step (agent
-    reporting its verdict), which may just show the page after the error
-    toast has disappeared. The second-to-last is usually the actual bug
-    evidence (e.g. the error toast visible). If only one exists, use it.
+    Strategy (in priority order):
+    1. Find the step in the action log where the agent observed the error
+       (extracted_content mentions 'error', 'toast', 'fail', etc.) and
+       use that step's screenshot — this is the moment the bug is visible.
+    2. Find the step just before the 'done' action (verdict step) — the
+       agent typically screenshots the bug state before concluding.
+    3. Fall back to the last screenshot.
+
+    The naive "second-to-last" heuristic fails because error toasts are
+    ephemeral (~3s) — by the time the agent takes later screenshots,
+    the toast has disappeared.
     """
     evidence_files = sorted(repro_dir.glob("evidence-*.png"))
     if not evidence_files:
         return None
-    # Prefer second-to-last (the bug moment), fall back to last
+
+    # Try to find the bug-moment step from the action log
+    action_log_path = repro_dir / "action-log.json"
+    if action_log_path.exists():
+        try:
+            action_log = json.loads(action_log_path.read_text())
+            bug_step = None
+            done_step = None
+
+            submit_step = None
+
+            for step in action_log:
+                step_num = step.get("step", 0)
+                actions = step.get("actions", [])
+
+                # Track the submit action (Enter/click that triggers the bug)
+                # The screenshot right AFTER submit is most likely to show the toast
+                if actions and isinstance(actions[0], dict):
+                    for name, params in actions[0].items():
+                        name_l = name.lower()
+                        if name_l in ("send_keys", "sendkeys", "key_press"):
+                            keys = str(params.get("keys", params.get("key", ""))).lower()
+                            if keys in ("enter", "return"):
+                                submit_step = step_num
+                        elif name_l in ("click", "clickelement", "click_element"):
+                            # Click on a submit/create button
+                            pass
+
+                # Check results for error observations
+                for r in step.get("results", []):
+                    content = str(r.get("extracted_content", "")).lower()
+                    error = str(r.get("error", "")).lower()
+                    # Look for error toast / validation message observations
+                    if any(kw in content for kw in ["error", "toast", "fail", "some error occurred", "generic"]):
+                        bug_step = step_num
+                    if any(kw in error for kw in ["error", "fail"]):
+                        bug_step = step_num
+                    if r.get("is_done"):
+                        done_step = step_num
+
+                # Check agent thought for error observations
+                thought = str(step.get("thought", "")).lower()
+                if any(kw in thought for kw in ["error toast", "generic error", "some error", "bug confirmed", "error message"]):
+                    bug_step = step_num
+
+            # Use bug-moment screenshot if found
+            if bug_step is not None:
+                # Screenshots are 0-indexed (evidence-00.png = step 1)
+                idx = bug_step - 1
+                if 0 <= idx < len(evidence_files):
+                    return evidence_files[idx]
+                # Also try the step after (screenshot taken after observing)
+                if 0 <= idx + 1 < len(evidence_files):
+                    return evidence_files[idx + 1]
+
+            # Use the screenshot from the form submit step (Enter key)
+            # Error toasts appear immediately after submit — the screenshot
+            # taken at this step is most likely to capture the ephemeral toast.
+            # Evidence files are 1-indexed (evidence-01.png = step 1) but
+            # the sorted list is 0-indexed, so step N = evidence_files[N-1].
+            if submit_step is not None:
+                # Screenshot AT the submit step (toast just appeared)
+                idx = submit_step - 1
+                if 0 <= idx < len(evidence_files):
+                    return evidence_files[idx]
+                # Or the step right after (agent observing the result)
+                idx = submit_step
+                if 0 <= idx < len(evidence_files):
+                    return evidence_files[idx]
+
+            # Use step before done as fallback
+            if done_step is not None and done_step >= 2:
+                idx = done_step - 2  # step before done, 0-indexed
+                if 0 <= idx < len(evidence_files):
+                    return evidence_files[idx]
+
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass  # Fall through to simple heuristic
+
+    # Simple fallback: second-to-last (better than last which is often post-toast)
     if len(evidence_files) >= 2:
         return evidence_files[-2]
     return evidence_files[-1]
