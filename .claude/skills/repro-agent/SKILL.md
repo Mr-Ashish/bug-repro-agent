@@ -48,9 +48,11 @@ python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
-## After drive.py completes — verify ALL artifacts
+## After drive.py completes — verify ALL artifacts and actions
 
-This is mandatory. Check that every artifact was generated:
+This is mandatory. Do NOT skip any step.
+
+### 1. Check artifacts exist
 
 ```bash
 ls reproductions/<N>/verdict.md         # must exist — the verdict
@@ -62,6 +64,24 @@ ls reproductions/<N>/evidence-*.png     # should exist — screenshots
 ```
 
 If any of `verdict.md`, `action-log.json`, `test_<N>.py`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
+
+### 2. Run the Playwright test independently
+
+drive.py generates and attempts to run the test, but it may fail silently. Always run it yourself:
+
+```bash
+pytest reproductions/<N>/test_<N>.py -v
+```
+
+Selector-based failures are expected (auto-generated selectors use element indices). Report pass/fail in your summary.
+
+### 3. Verify the GitHub comment was posted
+
+```bash
+gh issue view <N> --repo makeplane/plane --json comments --jq '.comments[-1].body' | head -5
+```
+
+Confirm the latest comment is the reproduction report, not a stale one.
 
 ## Retry loop
 

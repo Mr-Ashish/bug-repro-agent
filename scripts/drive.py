@@ -627,7 +627,7 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
             print("\n── Running Playwright test ──")
             try:
                 pw_result = subprocess.run(
-                    ["pytest", str(test_path), "-v", "--timeout=60"],
+                    ["pytest", str(test_path), "-v"],
                     capture_output=True, text=True, timeout=120,
                 )
                 pw_output = (pw_result.stdout + pw_result.stderr).strip()
