@@ -196,8 +196,11 @@ def generate_test(issue_number: str, repro_dir: Path) -> str:
             step_lines.append(f"    page.mouse.wheel(0, {delta})")
 
         elif t in ("key_press", "keypress", "press_key", "presskey", "sendkeys", "send_keys"):
-            key = p.get("key", "")
-            step_lines.append(f'    page.keyboard.press("{key}")')
+            key = p.get("keys", p.get("key", ""))
+            if key:
+                step_lines.append(f'    page.keyboard.press("{key}")')
+            else:
+                step_lines.append(f"    # send_keys action — key not captured")
 
         elif t in ("evaluate",):
             code = p.get("code", p.get("js_code", ""))

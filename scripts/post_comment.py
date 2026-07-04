@@ -124,7 +124,7 @@ def upload_artifacts_via_git(repro_dir: Path, issue_number: str) -> dict:
 
     # Git add + commit + push
     try:
-        subprocess.run(["git", "add"] + files_to_add, check=True, capture_output=True)
+        subprocess.run(["git", "add", "-f"] + files_to_add, check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", f"repro: #{issue_number} artifacts (GIF + evidence)"],
             check=True, capture_output=True,
@@ -266,10 +266,12 @@ def build_comment(
     parts = []
 
     # ── Header
-    status = verdict["status"]
-    status_emoji = "✅" if "REPRODUCED" in status and "NOT" not in status else "❌" if "NOT" in status else "⚠️"
+    raw_status = verdict["status"]
+    # Strip any existing emoji prefix (verdict.md already includes one)
+    status_text = re.sub(r'^[✅❌⚠️🔍🤖\s]+', '', raw_status).strip()
+    status_emoji = "✅" if "REPRODUCED" in status_text and "NOT" not in status_text else "❌" if "NOT" in status_text else "⚠️"
     parts.append(f"### 🔍 Reproduction Report — `repro-agent`\n")
-    parts.append(f"**Verdict:** {status_emoji} {status}")
+    parts.append(f"**Verdict:** {status_emoji} {status_text}")
     parts.append(f"**Summary:** {verdict['summary']}")
     parts.append(f"**Run time:** {verdict.get('duration', '?')}  ·  **Steps:** {verdict.get('steps', '?')}")
     parts.append("")
