@@ -13,8 +13,22 @@ Run these steps in order. Each step must succeed before moving to the next.
 
 **Use `docker-compose.yml` (NOT `docker-compose-local.yml`).** The local compose file only has backend services — no web frontend, no Caddy proxy, and the API image is missing `debug_toolbar`. The full compose file has all 13 services including Caddy on port 80 which unifies frontend and API.
 
+**Before starting**, patch docker-compose.yml to expose the API port directly. The SPA's auth redirects the browser to `localhost:3000` (VITE_WEB_BASE_URL), and the SPA on port 3000 calls the API at `localhost:8000` — but Docker doesn't expose 8000 by default. Without this, Playwright tests fail because the SPA can't reach the API.
+
 ```bash
-cd plane && docker compose -f docker-compose.yml up -d
+cd plane
+
+# Expose API port 8000 (idempotent — skips if already patched)
+if ! grep -A2 'container_name: api' docker-compose.yml | grep -q 'ports:'; then
+  sed -i.bak '/container_name: api/,/depends_on:/{
+    /depends_on:/i\
+\    ports:\
+\      - "8000:8000"
+  }' docker-compose.yml
+  echo "✅ Patched docker-compose.yml — API port 8000 exposed"
+fi
+
+docker compose -f docker-compose.yml up -d
 ```
 
 Wait for the API to be ready (migrator needs ~30-60s on first run):
@@ -23,6 +37,12 @@ echo "Waiting for API..." && until curl -s http://localhost:80/api/instances/ > 
 ```
 
 If services aren't healthy after 90 seconds, stop. Don't debug Docker or Caddyfiles — that's a human problem.
+
+**Known issue — gunicorn**: The `Dockerfile.api` may produce an image without `gunicorn` installed (it's not in `requirements.txt`). If the API container crashes with `gunicorn: not found`, rebuild with gunicorn added:
+```bash
+docker compose -f docker-compose.yml exec api pip install gunicorn && docker compose -f docker-compose.yml restart api
+```
+If that doesn't persist (container restarts lose pip installs), add `RUN pip install gunicorn` to `apps/api/Dockerfile.api` and rebuild: `docker compose -f docker-compose.yml build api && docker compose -f docker-compose.yml up -d api`.
 
 ### 2. Register admin + create workspace (fresh install only)
 
@@ -143,8 +163,13 @@ drive.py generates a **skeleton** test — login fixture works, but post-login s
    - `Clicked span "New work item"` → `page.locator('text="New work item"').click()`
 3. For input actions, check the thought field for `name=`, `placeholder=`, `id=` attributes
 4. Add assertions for the expected bug behavior (e.g. error toast text)
-5. Run `pytest reproductions/<N>/test_<N>.py -v` to verify it passes
-6. If it fails, fix selectors and rerun. Max 2 attempts.
+5. **Port-aware navigation**: After login, the SPA redirects to `localhost:3000` (VITE_WEB_BASE_URL). Use `page.evaluate("window.location.origin")` to get the current origin and navigate relative to it, NOT to a hardcoded `BASE_URL`. Example:
+   ```python
+   origin = page.evaluate("window.location.origin")
+   page.goto(f"{origin}/{WORKSPACE}/projects/{PROJECT_ID}/issues/")
+   ```
+6. Run `pytest reproductions/<N>/test_<N>.py -v --base-url http://localhost:80` to verify it passes
+7. If it fails, fix selectors and rerun. Max 2 attempts.
 
 ### 3. Verify the GitHub comment was posted
 
