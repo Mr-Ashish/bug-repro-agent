@@ -239,17 +239,17 @@ sequenceDiagram
 
 ## Plane Knowledge
 
-Injected into the agent prompt by `drive.py`:
+Injected into the agent prompt by `drive.py`. All values read from `.env` with defaults in `scripts/drive.py`:
 
-| Knowledge | Value |
-|-----------|-------|
-| Base URL | `http://localhost:80` |
-| Login | `admin@admin.com` / `qweQWE123!@#` |
-| Workspace | `plane-dev` |
-| Project | SEED (Seed Demo Project) |
-| Nav pattern | `/plane-dev/projects/<id>/issues/` |
+| Knowledge | Source of truth |
+|-----------|----------------|
+| Base URL | `.env` → `PLANE_URL`; default in `scripts/drive.py` `PLANE_URL` |
+| Login | `.env` → `PLANE_EMAIL`, `PLANE_PASSWORD`; defaults in `scripts/drive.py` |
+| Workspace | `.env` → `PLANE_WORKSPACE`; default in `scripts/drive.py` `PLANE_WORKSPACE` |
+| Project | `scripts/seed.py` → `SEED_PROJECT_NAME`, `SEED_PROJECT_ID` |
+| Nav pattern | `scripts/drive.py` → `TASK_TEMPLATE` Principles section |
 | Auth flow | Email + password login page |
-| Existing data | 5 work items (incl. edge cases), 5 states, 1 project (SEED) |
+| Existing data | Defined in `scripts/seed.py` → `SEED_STATES` and `SEED_ISSUES` lists |
 
 ---
 
@@ -325,4 +325,4 @@ bug-repro-agent/
 | **Artifact bundle** | All output: `issue.json`, `task-prompt.txt`, `action-log.json`, `evidence-*.png`, `verdict.md`, `agent-run.gif`, `conversation.json`, `traces/`, `error.txt`, `github-comment.md`. |
 | **Action log** | `action-log.json` — every agent step (thought, action, result, URL). |
 | **Preflight** | Checks run by drive.py before starting the agent: Chrome reachable, Plane frontend+backend healthy, gh authenticated. |
-| **Seed data** | SEED project with 5 states and 5 work items (including edge cases) created by `seed.py populate`. |
+| **Seed data** | SEED project with states and work items defined in `scripts/seed.py` (`SEED_STATES`, `SEED_ISSUES`), created by `seed.py populate`. |

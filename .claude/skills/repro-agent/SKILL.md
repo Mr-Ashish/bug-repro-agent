@@ -15,9 +15,11 @@ Pre-flight checklist — run in this exact order:
    ```
    This ensures we run against the latest Plane code with our local infrastructure fixes applied.
 
-2. **Verify Plane is running** at `localhost:80` with backend services healthy:
-   ```
-   curl -sf http://localhost:80/api/instances/ > /dev/null && echo "Plane OK" || echo "Plane DOWN"
+2. **Verify Plane is running** (URL from `.env` `PLANE_URL`, default in `scripts/drive.py`):
+   ```bash
+   # Read PLANE_URL from .env, fall back to drive.py default
+   PLANE_URL=$(grep PLANE_URL .env 2>/dev/null | cut -d= -f2 || python3 -c "import scripts.drive as d; print(d.PLANE_URL)")
+   curl -sf ${PLANE_URL}/api/instances/ > /dev/null && echo "Plane OK" || echo "Plane DOWN"
    docker ps --filter "name=plane" --format '{{.Names}}: {{.Status}}'
    ```
    If Plane Docker services are down, start them:
@@ -26,12 +28,12 @@ Pre-flight checklist — run in this exact order:
    ```
    Wait up to 45 seconds for services to become healthy before continuing.
 
-3. **Verify Chrome** is running with remote debugging on port 9222:
-   ```
+3. **Verify Chrome** is running with remote debugging (port from `scripts/drive.py` `discover_cdp_url()`):
+   ```bash
    curl -sf http://localhost:9222/json/version > /dev/null && echo "Chrome OK" || echo "Chrome not running"
    ```
    If Chrome is not running, start it:
-   ```
+   ```bash
    /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --start-maximized
    ```
 
@@ -45,7 +47,7 @@ Pre-flight checklist — run in this exact order:
    ```
    python scripts/seed.py populate
    ```
-   Creates a SEED project with 5 work items (incl. edge cases) and 5 states.
+   Creates seed data defined in `scripts/seed.py` (`SEED_STATES` and `SEED_ISSUES` lists).
    Idempotent — safe to run multiple times. Re-run `check` after to verify.
 
 Only proceed to drive.py after `seed.py check` exits 0.
@@ -160,7 +162,7 @@ This agent **reproduces** bugs. It does not fix, patch, or resolve them.
 - **Any issue.** The prompt is built dynamically from the issue body — no hardcoded steps.
 - **Structured verdict.** The agent must end with `VERDICT: REPRODUCED|NOT_REPRODUCED|INCONCLUSIVE | <summary>`. Parsed by regex, not keyword matching.
 - **Disk-first.** All artifacts are saved during the run. State survives crashes.
-- **Max 50 steps.** The agent has up to 50 browser actions before it must conclude.
+- **Step budget.** The agent has a max step limit (see `max_steps` in `scripts/drive.py`) before it must conclude.
 
 ## Artifacts
 
@@ -182,10 +184,11 @@ All output goes to `reproductions/<issue-number>/`:
 
 ## Config
 
-All via `.env`:
+All via `.env`. Defaults are in `scripts/drive.py`. See `CLAUDE.md` → "Configuration source of truth" for the full reference table.
+
 - `OPENROUTER_API_KEY` — LLM access
-- `BROWSER_USE_MODEL` — model (default: `anthropic/claude-sonnet-4`)
-- `CDP_URL` — Chrome CDP WebSocket (leave blank for auto-discovery)
-- `PLANE_URL` — Plane instance URL (default: `http://localhost:80` via Caddy proxy)
+- `BROWSER_USE_MODEL` — model (see `scripts/drive.py` `MODEL` default)
+- `CDP_URL` — Chrome CDP WebSocket (leave blank — auto-discovered by `discover_cdp_url()`)
+- `PLANE_URL` — Plane instance URL (see `scripts/drive.py` `PLANE_URL` default)
 - `PLANE_EMAIL`, `PLANE_PASSWORD`, `PLANE_WORKSPACE`
-- `GITHUB_REPO` — default repo for `--issue` (default: `makeplane/plane`)
+- `GITHUB_REPO` — default repo (see `scripts/drive.py` `DEFAULT_REPO`)
