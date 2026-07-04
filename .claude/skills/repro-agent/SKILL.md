@@ -113,11 +113,9 @@ python scripts/drive.py --issue <N> --timeout 600      # custom timeout
 
 **Always use `--post`.** The job isn't done until the verdict is posted to the GitHub issue.
 
-`drive.py` automatically generates AND runs the Playwright test. Check its output for pass/fail. If the test fails with selector errors, that's expected — the auto-generated selectors use element indices, not stable selectors.
-
 Exit codes: `0` reproduced, `1` not reproduced, `2` inconclusive, `3` error.
 
-## After drive.py completes — verify ALL artifacts and actions
+## After drive.py completes — verify and refine
 
 This is mandatory. Do NOT skip any step.
 
@@ -126,7 +124,7 @@ This is mandatory. Do NOT skip any step.
 ```bash
 ls reproductions/<N>/verdict.md         # must exist — the verdict
 ls reproductions/<N>/action-log.json    # must exist — step traces
-ls reproductions/<N>/test_<N>.py        # must exist — Playwright regression test
+ls reproductions/<N>/test_<N>.py        # must exist — Playwright skeleton test
 ls reproductions/<N>/github-comment.md  # must exist — posted to GitHub
 ls reproductions/<N>/agent-run.gif      # should exist — GIF of browser session
 ls reproductions/<N>/evidence-*.png     # should exist — screenshots
@@ -134,15 +132,19 @@ ls reproductions/<N>/evidence-*.png     # should exist — screenshots
 
 If any of `verdict.md`, `action-log.json`, `test_<N>.py`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
 
-### 2. Run the Playwright test independently
+### 2. Refine the Playwright test
 
-drive.py generates and attempts to run the test, but it may fail silently. Always run it yourself:
+drive.py generates a **skeleton** test — login fixture works, but post-login steps are raw action-log comments. You must rewrite it into a working test:
 
-```bash
-pytest reproductions/<N>/test_<N>.py -v
-```
-
-Selector-based failures are expected (auto-generated selectors use element indices). Report pass/fail in your summary.
+1. Read `reproductions/<N>/test_<N>.py` (the skeleton) and `reproductions/<N>/action-log.json`
+2. The action log's `results[].extracted_content` tells you what was clicked/typed:
+   - `Clicked button "Continue"` → `page.locator('button:has-text("Continue")').click()`
+   - `Clicked a "Work items"` → `page.locator('a:has-text("Work items")').click()`
+   - `Clicked span "New work item"` → `page.locator('text="New work item"').click()`
+3. For input actions, check the thought field for `name=`, `placeholder=`, `id=` attributes
+4. Add assertions for the expected bug behavior (e.g. error toast text)
+5. Run `pytest reproductions/<N>/test_<N>.py -v` to verify it passes
+6. If it fails, fix selectors and rerun. Max 2 attempts.
 
 ### 3. Verify the GitHub comment was posted
 
