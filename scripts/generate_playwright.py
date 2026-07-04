@@ -76,8 +76,18 @@ def extract_steps(action_log: list[dict]) -> list[dict]:
         url = entry.get("url", "")
         results = entry.get("results", [])
 
-        for action_str in entry.get("actions", []):
-            parsed = parse_action_str(action_str)
+        for action_raw in entry.get("actions", []):
+            # Actions may be dicts (from model_dump) or strings (legacy format)
+            if isinstance(action_raw, dict):
+                # Dict format: {"click": {"index": 123}} or {"input": {"index": 1, "text": "..."}}
+                for action_name, action_params in action_raw.items():
+                    if isinstance(action_params, dict):
+                        parsed = {"type": action_name, "params": action_params}
+                    else:
+                        parsed = {"type": action_name, "params": {}}
+                    break  # one action per dict
+            else:
+                parsed = parse_action_str(action_raw)
             if not parsed:
                 continue
 
