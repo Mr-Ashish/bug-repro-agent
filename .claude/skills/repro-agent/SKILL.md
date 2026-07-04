@@ -111,7 +111,13 @@ Before running drive.py, read Plane source to find navigation context that saves
 
 Look for: URL routes, `data-testid` attributes, component names, UI structure (dropdowns, menus), relevant API endpoints.
 
-Pass discoveries via `--context` (inline string or file path to `reproductions/<N>/context.txt`).
+**Always write findings to `reproductions/<N>/context.txt`** — this file is read by `post_comment.py` for the root cause analysis section in the GitHub comment. Structure it with these sections:
+- `BUG:` — one-line description
+- `TECHNICAL DETAILS:` — bullet list of source files, missing validation, error paths
+- `NAVIGATION:` — how to reach the affected UI
+- `REPRODUCE:` — step-by-step instructions
+
+Pass discoveries via `--context reproductions/<N>/context.txt`.
 
 ## What it does
 

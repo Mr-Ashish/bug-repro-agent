@@ -78,11 +78,47 @@ def read_playwright_test(repro_dir: Path, issue_number: str) -> str:
     test_path = repro_dir / f"test_{issue_number}.py"
     if not test_path.exists():
         return ""
-    text = test_path.read_text()
-    # Truncate to keep comment readable
+    return test_path.read_text()
+
+
+def read_root_cause(repro_dir: Path) -> str:
+    """Read root cause analysis from context.txt.
+
+    The meta-agent writes source-code context to context.txt before
+    running drive.py. This contains the root cause (which files,
+    what validation is missing, etc.).
+    """
+    context_path = repro_dir / "context.txt"
+    if not context_path.exists():
+        return ""
+
+    text = context_path.read_text().strip()
+    if not text:
+        return ""
+
+    # Extract the TECHNICAL DETAILS section if present (most useful for RCA)
+    sections = []
+
+    # Look for TECHNICAL DETAILS block
+    tech_match = re.search(
+        r"TECHNICAL DETAILS:\s*\n((?:[-•].+\n?)+)", text, re.MULTILINE
+    )
+    if tech_match:
+        sections.append(tech_match.group(1).strip())
+
+    # Look for BUG description (first line)
+    bug_match = re.match(r"BUG:\s*(.+)", text)
+    if bug_match:
+        sections.insert(0, bug_match.group(1).strip())
+
+    # If we found structured sections, return them formatted
+    if sections:
+        return "\n\n".join(sections)
+
+    # Fallback: return the whole context (truncated)
     lines = text.splitlines()
-    if len(lines) > 60:
-        return "\n".join(lines[:60]) + f"\n# ... ({len(lines) - 60} more lines)"
+    if len(lines) > 20:
+        return "\n".join(lines[:20]) + "\n..."
     return text
 
 
@@ -287,6 +323,7 @@ def build_comment(
     steps: list[dict],
     image_urls: dict,
     playwright_test: str = "",
+    repro_dir: Path | None = None,
 ) -> str:
     """Build the rich GitHub Markdown comment body."""
     parts = []
@@ -302,19 +339,26 @@ def build_comment(
     parts.append(f"**Run time:** {verdict.get('duration', '?')}  ·  **Steps:** {verdict.get('steps', '?')}")
     parts.append("")
 
-    # ── Video (preferred over GIF — shows the full session with timing)
+    # ── Video (inline playback — preferred over GIF for full session)
     video_url = image_urls.get("video")
     gif_url = image_urls.get("gif")
     if video_url:
         parts.append("---\n")
-        parts.append("#### 🎬 Agent Run (Video)\n")
-        parts.append(f"[▶️ Watch full reproduction video]({video_url})\n")
-        if gif_url:
-            parts.append(f"![agent-run]({gif_url})\n")
+        parts.append("#### 🎬 Reproduction Session\n")
+        # GitHub renders <video> tags inline — no download needed
+        parts.append(
+            f'<video src="{video_url}" controls width="100%"'
+            f' alt="Bug reproduction session"></video>\n'
+        )
         parts.append("> Full autonomous browser session — login, navigation, reproduction, and bug observation.\n")
+        if gif_url:
+            parts.append("<details>")
+            parts.append("<summary>GIF preview (click to expand)</summary>\n")
+            parts.append(f"![agent-run]({gif_url})\n")
+            parts.append("</details>\n")
     elif gif_url:
         parts.append("---\n")
-        parts.append("#### 🎬 Agent Run\n")
+        parts.append("#### 🎬 Reproduction Session\n")
         parts.append(f"![agent-run]({gif_url})\n")
         parts.append("> Full autonomous browser session — login, navigation, reproduction, and bug observation.\n")
 
@@ -352,16 +396,21 @@ def build_comment(
         parts.append(f"![bug-evidence]({screenshot_url})\n")
         parts.append("> Screenshot captured at the moment the bug manifested.\n")
 
-    # ── Regression test
+    # ── Root cause analysis (from source-code context)
+    root_cause = read_root_cause(repro_dir) if repro_dir else ""
+    if root_cause:
+        parts.append("---\n")
+        parts.append("#### 🔬 Root Cause Analysis\n")
+        parts.append(mask_password(root_cause))
+        parts.append("")
+
+    # ── Regression test (full, not truncated)
     if playwright_test:
         parts.append("---\n")
-        parts.append("#### 🧪 Regression Test\n")
-        parts.append("<details>")
-        parts.append("<summary>Auto-generated Playwright test (click to expand)</summary>\n")
+        parts.append("#### 🧪 Playwright Regression Test\n")
         parts.append("```python")
         parts.append(mask_password(playwright_test))
         parts.append("```\n")
-        parts.append("</details>\n")
 
     # ── Footer
     parts.append("---\n")
@@ -435,7 +484,7 @@ def main():
     print(f"  Images:       {list(image_urls.keys()) or 'none'}")
 
     # Build comment
-    comment = build_comment(args.issue, verdict, steps, image_urls, playwright_test)
+    comment = build_comment(args.issue, verdict, steps, image_urls, playwright_test, repro_dir=repro_dir)
 
     # Save to file
     comment_path = repro_dir / "github-comment.md"
