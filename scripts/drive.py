@@ -605,6 +605,22 @@ async def run(issue_number: str, repo: str, *, dry_run: bool = False, timeout: i
         result = history.final_result() or "(no result)"
         status, verdict_key, summary = parse_verdict(result)
 
+        # ── Generate HTML report ──────────────────────────────
+        print("\n── Generating HTML report ──")
+        try:
+            rpt_result = subprocess.run(
+                ["python", "scripts/render_report.py",
+                 "--issue", str(issue["number"]),
+                 "--dir", str(repro_dir)],
+                capture_output=True, text=True,
+            )
+            if rpt_result.returncode == 0:
+                print(f"  {rpt_result.stdout.strip()}")
+            else:
+                print(f"  ⚠️ HTML report failed: {rpt_result.stderr.strip()}")
+        except Exception as e:
+            print(f"  ⚠️ Could not generate HTML report: {e}")
+
         # ── Generate Playwright test ──────────────────────────
         print("\n── Generating Playwright test ──")
         test_path = repro_dir / f"test_{issue['number']}.py"

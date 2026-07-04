@@ -152,11 +152,14 @@ ls reproductions/<N>/verdict.md         # must exist — the verdict
 ls reproductions/<N>/action-log.json    # must exist — step traces
 ls reproductions/<N>/test_<N>.py        # must exist — Playwright skeleton test
 ls reproductions/<N>/github-comment.md  # must exist — posted to GitHub
+ls reproductions/<N>/report.html        # must exist — self-contained HTML report
 ls reproductions/<N>/agent-run.gif      # should exist — GIF of browser session
 ls reproductions/<N>/evidence-*.png     # should exist — screenshots
 ```
 
 If any of `verdict.md`, `action-log.json`, `test_<N>.py`, or `github-comment.md` is missing, the run is incomplete. Check drive.py output for errors, fix, and rerun.
+
+The `report.html` is a self-contained file (all images/video base64-embedded) you can open in any browser. It has tabbed views: Session video, Action log, Screenshots with lightbox, Root cause, and Playwright test.
 
 ### 2. Refine the Playwright test
 
