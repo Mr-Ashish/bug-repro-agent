@@ -20,7 +20,7 @@ Read `.claude/skills/repro-agent/SKILL.md` first — it has the full pre-flight 
 | `scripts/post_comment.py` | Posts verdict to GitHub issue |
 | `.claude/skills/repro-agent/SKILL.md` | **Full skill definition — read before any run** |
 | `ARCHITECTURE.md` | System design, sequence diagram, layer ownership |
-| `FINAL-DEMO-RANKING.md` | 15 demo-worthy issues ranked by confidence |
+| `FINAL-DEMO-RANKING.md` | 15 demo-worthy issues ranked by confidence (human reference — don't read during runs) |
 
 ## Architecture
 
